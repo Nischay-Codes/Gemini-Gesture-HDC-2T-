@@ -6,8 +6,15 @@ export interface LandmarkPoint {
   z: number;
 }
 
+export interface SingleHand {
+  landmarks: LandmarkPoint[];
+  handedness: string;
+}
+
 export interface HandDetectionResult {
   hasHand: boolean;
+  handCount: number;
+  hands: SingleHand[];
   landmarks: LandmarkPoint[];
   handedness: string;
 }
@@ -36,7 +43,7 @@ export class HandTracker {
 
   public async init(): Promise<void> {
     try {
-      console.log('Initializing MediaPipe HandLandmarker from local assets...');
+      console.log('Initializing MediaPipe HandLandmarker with dual-hand support...');
       const vision = await FilesetResolver.forVisionTasks('/mediapipe-wasm');
       
       this.landmarker = await HandLandmarker.createFromOptions(vision, {
@@ -45,16 +52,16 @@ export class HandTracker {
           delegate: 'GPU',
         },
         runningMode: 'VIDEO',
-        numHands: 1,
+        numHands: 2, // Enable full 2-hand sign language tracking
         minHandDetectionConfidence: 0.5,
         minHandPresenceConfidence: 0.5,
         minTrackingConfidence: 0.5,
       });
 
       this.isReady = true;
-      console.log('MediaPipe HandLandmarker initialized successfully.');
+      console.log('MediaPipe HandLandmarker initialized (2-Hand Mode Active).');
     } catch (err) {
-      console.warn('GPU delegate failed or asset error, falling back to CPU or synthetic mode:', err);
+      console.warn('GPU delegate failed or asset error, falling back to CPU:', err);
       try {
         const vision = await FilesetResolver.forVisionTasks('/mediapipe-wasm');
         this.landmarker = await HandLandmarker.createFromOptions(vision, {
@@ -63,12 +70,12 @@ export class HandTracker {
             delegate: 'CPU',
           },
           runningMode: 'VIDEO',
-          numHands: 1,
+          numHands: 2, // Dual hand tracking on CPU
         });
         this.isReady = true;
       } catch (cpuErr) {
         console.warn('CPU landmarker initialization failed, running in synthetic mode:', cpuErr);
-        this.isReady = true; // Still ready via synthetic generator
+        this.isReady = true;
       }
     }
   }
@@ -83,24 +90,43 @@ export class HandTracker {
         try {
           const result = this.landmarker.detectForVideo(video, timestampMs);
           if (result && result.landmarks && result.landmarks.length > 0) {
-            const rawLms = result.landmarks[0];
-            const landmarks: LandmarkPoint[] = rawLms.map((pt) => ({
-              x: pt.x,
-              y: pt.y,
-              z: pt.z ?? 0.0,
-            }));
+            const hands: SingleHand[] = [];
 
-            const handedness = result.handedness?.[0]?.[0]?.categoryName ?? 'Right';
-            return { hasHand: true, landmarks, handedness };
+            for (let h = 0; h < result.landmarks.length; h++) {
+              const rawLms = result.landmarks[h];
+              const landmarks: LandmarkPoint[] = rawLms.map((pt) => ({
+                x: pt.x,
+                y: pt.y,
+                z: pt.z ?? 0.0,
+              }));
+
+              const handedness = result.handedness?.[h]?.[0]?.categoryName ?? (h === 0 ? 'Right' : 'Left');
+              hands.push({ landmarks, handedness });
+            }
+
+            return {
+              hasHand: true,
+              handCount: hands.length,
+              hands,
+              landmarks: hands[0].landmarks,
+              handedness: hands[0].handedness,
+            };
           }
         } catch (err) {
           // Frame skip
         }
       }
-      return { hasHand: false, landmarks: [], handedness: '' };
+      return { hasHand: false, handCount: 0, hands: [], landmarks: [], handedness: '' };
     }
 
-    return this.generateSyntheticHand();
+    const synth = this.generateSyntheticHand();
+    return {
+      hasHand: true,
+      handCount: 1,
+      hands: [{ landmarks: synth.landmarks, handedness: 'Right' }],
+      landmarks: synth.landmarks,
+      handedness: 'Right',
+    };
   }
 
   public generateSyntheticHand(): HandDetectionResult {
@@ -123,164 +149,149 @@ export class HandTracker {
         const j = (id - 5) % 4;
         lms[id] = { x: 0.44 + fIdx * 0.06, y: 0.48 + j * 0.02, z: -0.04 };
       }
-    } else if (this.syntheticPose === 'peace') {
-      lms[1] = { x: 0.42, y: 0.70, z: 0 };
-      lms[2] = { x: 0.44, y: 0.60, z: 0.02 };
-      lms[3] = { x: 0.46, y: 0.52, z: 0.02 };
-      lms[4] = { x: 0.48, y: 0.48, z: 0.02 };
-      for (let j = 0; j < 4; j++) {
-        lms[5 + j] = { x: 0.42 - j * 0.04, y: 0.4 - j * 0.10 + Math.sin(t * 2) * 0.01, z: 0 };
-        lms[9 + j] = { x: 0.50 + j * 0.04, y: 0.4 - j * 0.10 + Math.cos(t * 2) * 0.01, z: 0 };
-      }
-      for (let id = 13; id < 21; id++) {
-        const fIdx = Math.floor((id - 13) / 4);
-        const j = (id - 13) % 4;
-        lms[id] = { x: 0.56 + fIdx * 0.06, y: 0.50 + j * 0.02, z: -0.04 };
-      }
-    } else if (this.syntheticPose === 'wave_left') {
-      const offset = Math.sin(t * 3.0) * 0.15;
-      lms[0] = { x: 0.5 + offset, y: 0.7, z: 0 };
-      for (let i = 1; i < 21; i++) {
-        lms[i] = { x: 0.4 + (i % 5) * 0.05 + offset, y: 0.5 - Math.floor(i / 5) * 0.08, z: 0 };
-      }
     } else {
-      // Default fist
-      const fingerBases = [1, 5, 9, 13, 17];
-      const fingerXs = [0.38, 0.44, 0.50, 0.56, 0.62];
-      for (let fIdx = 0; fIdx < fingerBases.length; fIdx++) {
-        const fx = fingerXs[fIdx];
-        for (let j = 0; j < 4; j++) {
-          const id = fingerBases[fIdx] + j;
-          if (id < 21) {
-            lms[id] = { x: fx, y: 0.48 + j * 0.02, z: -0.05 };
-          }
-        }
+      // Open hand
+      for (let id = 1; id < 21; id++) {
+        const fIdx = Math.floor((id - 1) / 4);
+        const j = (id - 1) % 4;
+        lms[id] = { x: 0.35 + fIdx * 0.07, y: 0.70 - j * 0.12, z: 0 };
       }
     }
 
-    return { hasHand: true, landmarks: lms, handedness: 'Right' };
+    return {
+      hasHand: true,
+      handCount: 1,
+      hands: [{ landmarks: lms, handedness: 'Right' }],
+      landmarks: lms,
+      handedness: 'Right',
+    };
   }
 
+  /**
+   * Draws all detected hands with distinct color themes for Right vs Left hand
+   */
   public drawSkeleton(
     ctx: CanvasRenderingContext2D,
-    landmarks: LandmarkPoint[],
+    input: LandmarkPoint[] | SingleHand[],
     width: number,
     height: number,
     corruptedIndices?: Set<number>
   ): void {
     ctx.clearRect(0, 0, width, height);
 
-    if (landmarks.length < 21) return;
+    if (!input || (input as any).length === 0) return;
 
-    const hasCorruption = corruptedIndices && corruptedIndices.size > 0;
+    // Normalize input to an array of SingleHand
+    const handsToDraw: SingleHand[] = (input[0] && 'landmarks' in input[0])
+      ? (input as SingleHand[])
+      : [{ landmarks: input as LandmarkPoint[], handedness: 'Right' }];
 
-    // 1. Subtle Sub-surface Palm Mesh (connecting wrist to MCP knuckles)
-    const wrist = landmarks[0];
-    const indexMcp = landmarks[5];
-    const pinkyMcp = landmarks[17];
-    ctx.beginPath();
-    ctx.moveTo(wrist.x * width, wrist.y * height);
-    ctx.lineTo(indexMcp.x * width, indexMcp.y * height);
-    ctx.lineTo(pinkyMcp.x * width, pinkyMcp.y * height);
-    ctx.closePath();
-    ctx.fillStyle = hasCorruption ? 'rgba(239, 68, 68, 0.08)' : 'rgba(56, 189, 248, 0.05)';
-    ctx.fill();
+    handsToDraw.forEach((hand, hIdx) => {
+      const landmarks = hand.landmarks;
+      if (!landmarks || landmarks.length < 21) return;
 
-    // 2. Precision Laser Skeletal Bones
-    ctx.save();
-    ctx.lineWidth = 1.3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+      const isRightHand = hand.handedness === 'Right' || hIdx === 0;
+      const boneStrokeColor = isRightHand ? 'rgba(56, 189, 248, 0.85)' : 'rgba(168, 85, 247, 0.85)';
+      const boneShadowColor = isRightHand ? 'rgba(56, 189, 248, 0.5)' : 'rgba(168, 85, 247, 0.5)';
+      const palmFillColor = isRightHand ? 'rgba(56, 189, 248, 0.06)' : 'rgba(168, 85, 247, 0.06)';
+      const nodeRingColor = isRightHand ? 'rgba(56, 189, 248, 0.95)' : 'rgba(168, 85, 247, 0.95)';
 
-    for (const [start, end] of HAND_CONNECTIONS) {
-      const isBoneCorrupted = corruptedIndices && (corruptedIndices.has(start) || corruptedIndices.has(end));
-      const p1 = landmarks[start];
-      const p2 = landmarks[end];
-
+      // 1. Palm Sub-surface Triangle
+      const wrist = landmarks[0];
+      const indexMcp = landmarks[5];
+      const pinkyMcp = landmarks[17];
       ctx.beginPath();
-      ctx.moveTo(p1.x * width, p1.y * height);
-      ctx.lineTo(p2.x * width, p2.y * height);
+      ctx.moveTo(wrist.x * width, wrist.y * height);
+      ctx.lineTo(indexMcp.x * width, indexMcp.y * height);
+      ctx.lineTo(pinkyMcp.x * width, pinkyMcp.y * height);
+      ctx.closePath();
+      ctx.fillStyle = palmFillColor;
+      ctx.fill();
 
-      if (isBoneCorrupted) {
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.75)';
-        ctx.shadowColor = 'rgba(239, 68, 68, 0.6)';
-        ctx.shadowBlur = 4;
-      } else {
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)';
-        ctx.shadowColor = 'rgba(56, 189, 248, 0.45)';
-        ctx.shadowBlur = 3;
-      }
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    // 3. Precision Optical Tracking Micro-Nodes
-    const tipIndices = new Set([4, 8, 12, 16, 20]);
-
-    for (let i = 0; i < landmarks.length; i++) {
-      const pt = landmarks[i];
-      const px = pt.x * width;
-      const py = pt.y * height;
-      const isNodeCorrupted = corruptedIndices && corruptedIndices.has(i);
-
-      if (isNodeCorrupted) {
-        // Corrupted / Occluded Node: Glitch Crimson Warning Marker
-        ctx.beginPath();
-        ctx.arc(px, py, 5.0, 0, 2 * Math.PI);
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 1.4;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(px, py, 2.0, 0, 2 * Math.PI);
-        ctx.fillStyle = '#f87171';
-        ctx.fill();
-      } else if (i === 0) {
-        // Wrist Anchor: Precision origin node with subtle emerald reticle
-        ctx.beginPath();
-        ctx.arc(px, py, 4.2, 0, 2 * Math.PI);
-        ctx.strokeStyle = 'rgba(16, 185, 129, 0.9)';
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(px, py, 1.8, 0, 2 * Math.PI);
-        ctx.fillStyle = '#10b981';
-        ctx.fill();
-      } else if (tipIndices.has(i)) {
-        // Fingertip Reticles
-        ctx.beginPath();
-        ctx.arc(px, py, 3.8, 0, 2 * Math.PI);
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.95)';
-        ctx.lineWidth = 1.0;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(px, py, 1.6, 0, 2 * Math.PI);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-      } else {
-        // Intermediate Joint
-        ctx.beginPath();
-        ctx.arc(px, py, 2.0, 0, 2 * Math.PI);
-        ctx.fillStyle = '#f8fafc';
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(px, py, 3.0, 0, 2 * Math.PI);
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-        ctx.lineWidth = 0.7;
-        ctx.stroke();
-      }
-    }
-
-    // 4. Subtle HUD Status Overlay if noise is active
-    if (hasCorruption) {
+      // 2. Skeletal Bones
       ctx.save();
-      ctx.font = '600 10px "JetBrains Mono", monospace';
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.85)';
-      ctx.fillText(`⚡ SIMULATED NOISE ACTIVE (${corruptedIndices.size}/21 JOINTS OCCLUDED)`, 12, 22);
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = boneStrokeColor;
+      ctx.shadowColor = boneShadowColor;
+      ctx.shadowBlur = 4;
+
+      for (const [start, end] of HAND_CONNECTIONS) {
+        const p1 = landmarks[start];
+        const p2 = landmarks[end];
+        ctx.beginPath();
+        ctx.moveTo(p1.x * width, p1.y * height);
+        ctx.lineTo(p2.x * width, p2.y * height);
+        ctx.stroke();
+      }
       ctx.restore();
+
+      // 3. Precision Optical Tracking Joints
+      const tipIndices = new Set([4, 8, 12, 16, 20]);
+
+      for (let i = 0; i < landmarks.length; i++) {
+        const pt = landmarks[i];
+        const px = pt.x * width;
+        const py = pt.y * height;
+
+        if (i === 0) {
+          // Wrist Anchor node
+          ctx.beginPath();
+          ctx.arc(px, py, 4.5, 0, 2 * Math.PI);
+          ctx.strokeStyle = isRightHand ? '#10b981' : '#a855f7';
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(px, py, 2.0, 0, 2 * Math.PI);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+
+          // Handedness HUD Tag above wrist
+          ctx.save();
+          ctx.font = '700 9px "JetBrains Mono", monospace';
+          ctx.fillStyle = isRightHand ? '#38bdf8' : '#c084fc';
+          ctx.fillText(hand.handedness.toUpperCase(), px - 14, py + 14);
+          ctx.restore();
+        } else if (tipIndices.has(i)) {
+          // Fingertips
+          ctx.beginPath();
+          ctx.arc(px, py, 3.8, 0, 2 * Math.PI);
+          ctx.strokeStyle = nodeRingColor;
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(px, py, 1.8, 0, 2 * Math.PI);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        } else {
+          // Intermediate Knuckles
+          ctx.beginPath();
+          ctx.arc(px, py, 2.0, 0, 2 * Math.PI);
+          ctx.fillStyle = '#f8fafc';
+          ctx.fill();
+        }
+      }
+    });
+
+    // If both hands are active, draw a subtle glowing connection line between wrists
+    if (handsToDraw.length >= 2) {
+      const w1 = handsToDraw[0].landmarks[0];
+      const w2 = handsToDraw[1].landmarks[0];
+      const d = Math.hypot(w1.x - w2.x, w1.y - w2.y);
+      if (d < 0.35) {
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.45)';
+        ctx.lineWidth = 1.0;
+        ctx.beginPath();
+        ctx.moveTo(w1.x * width, w1.y * height);
+        ctx.lineTo(w2.x * width, w2.y * height);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
 }

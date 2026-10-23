@@ -368,6 +368,25 @@ body {
   font-size: 0.8rem;
   font-weight: 700;
   color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.tag-hands {
+  font-size: 0.62rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--accent-cyan);
+}
+
+.tag-hands-2 {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
 }
 
 .sign-hint {

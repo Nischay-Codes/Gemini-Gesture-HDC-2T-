@@ -1,5 +1,5 @@
 import { CameraManager } from './camera/camera_manager';
-import { HandTracker, LandmarkPoint } from './vision/hand_tracker';
+import { HandTracker, LandmarkPoint, SingleHand } from './vision/hand_tracker';
 import { TrajectoryBuffer } from './encoder/trajectory_buffer';
 import { EngineManager } from './recognition/engine_manager';
 import { SignLanguageRecognizer, SignRecognitionOutput } from './vision/sign_recognizer';
@@ -67,6 +67,7 @@ class SignVoxApp {
 
   // Custom User Gestures Map: phrase -> label
   private customPhrases: Map<string, string> = new Map();
+  private lastActiveHands: SingleHand[] = [];
 
   // Camera Controls
   private btnToggleCam: HTMLButtonElement;
@@ -134,14 +135,13 @@ class SignVoxApp {
     this.geminiService = new GeminiService();
     this.ttsService = new TtsService();
 
-    // Mirror by default for natural self-view
     if (this.cameraStage) {
       this.cameraStage.classList.add('mirrored');
     }
   }
 
   public async init(): Promise<void> {
-    console.log('Initializing SignVox HDC-2T System...');
+    console.log('Initializing SignVox HDC-2T Dual-Hand System...');
 
     // 1. Initialize Hardware HDC WebAssembly SIMD Kernel
     try {
@@ -154,11 +154,11 @@ class SignVoxApp {
       console.warn('HDC WASM SIMD initialization note:', e);
     }
 
-    // 2. Initialize MediaPipe Tasks-Vision Local Model
+    // 2. Initialize MediaPipe Tasks-Vision Local Model (2-Hand mode)
     try {
       await this.handTracker.init();
       if (this.trackingStatusBadge) {
-        this.trackingStatusBadge.textContent = 'MediaPipe 3D Model Active (60 FPS)';
+        this.trackingStatusBadge.textContent = 'MediaPipe Dual-Hand Model Active (60 FPS)';
       }
     } catch (e) {
       console.warn('HandTracker init note:', e);
@@ -194,10 +194,12 @@ class SignVoxApp {
    * Pre-seeds the on-device HDC 10,000-bit memory with canonical sign vectors
    */
   private seedCanonicalHdcMemory(): void {
-    const signs = ['HELLO', 'THANK_YOU', 'YES', 'NO', 'I_LOVE_YOU', 'WATER', 'HELP', 'STOP'];
+    const signs = [
+      'HELLO', 'YES', 'NO', 'I_LOVE_YOU', 'WATER', 'STOP',
+      'NAMASTE', 'ASL_HELP', 'HEART', 'TIME_OUT', 'WELCOME', 'HOME'
+    ];
     for (const sign of signs) {
       const dummyTraj = new Float64Array(15 * 63);
-      // Deterministic spatial distribution across 945 dimensions
       for (let i = 0; i < dummyTraj.length; i++) {
         dummyTraj[i] = Math.sin(i * 0.15 + signs.indexOf(sign) * 1.2) * 0.25 + 0.5;
       }
@@ -348,20 +350,23 @@ class SignVoxApp {
   }
 
   /**
-   * One-Shot Learning: Records a live gesture in 2 seconds and stores it into HDC SIMD memory
+   * One-Shot Learning: Records a live 1-hand or 2-hand gesture and stores into HDC SIMD memory
    */
   private recordCustomSign(spokenPhrase: string): void {
     let countdown = 3;
     this.btnRecordCustomSign.disabled = true;
-    this.customTrainerStatus.textContent = `Get ready... Hold gesture in ${countdown}s`;
+    const isTwoHands = this.lastActiveHands.length >= 2;
+    const modeLabel = isTwoHands ? '2-Hand Sign' : '1-Hand Sign';
+
+    this.customTrainerStatus.textContent = `Get ready... Hold ${modeLabel} in ${countdown}s`;
 
     const timer = setInterval(() => {
       countdown--;
       if (countdown > 0) {
-        this.customTrainerStatus.textContent = `Get ready... Hold gesture in ${countdown}s`;
+        this.customTrainerStatus.textContent = `Get ready... Hold ${modeLabel} in ${countdown}s`;
       } else {
         clearInterval(timer);
-        this.customTrainerStatus.textContent = `⚡ Recording hand vector into 10,000-bit HDC Memory...`;
+        this.customTrainerStatus.textContent = `⚡ Recording ${modeLabel} into 10,000-bit HDC Memory...`;
 
         setTimeout(() => {
           if (this.trajectoryBuffer.isFull()) {
@@ -370,8 +375,8 @@ class SignVoxApp {
               const label = 'CUSTOM_' + Date.now();
               this.engineManager.enroll(label, flatTraj);
               this.customPhrases.set(label, spokenPhrase);
-              this.customTrainerStatus.innerHTML = `✓ <strong class="text-green">Enrolled!</strong> Sign now triggers spoken phrase in <strong>1.15 μs</strong>.`;
-              this.ttsService.speak(`Custom sign learned: ${spokenPhrase}`, true);
+              this.customTrainerStatus.innerHTML = `✓ <strong class="text-green">Enrolled ${modeLabel}!</strong> Triggers "${spokenPhrase}" in <strong>1.15 μs</strong>.`;
+              this.ttsService.speak(`Learned ${modeLabel}: ${spokenPhrase}`, true);
               this.btnRecordCustomSign.disabled = false;
               this.inputCustomPhrase.value = '';
               return;
@@ -385,27 +390,50 @@ class SignVoxApp {
   }
 
   /**
-   * Main 60 FPS Video & Sign Analysis Loop
+   * Main 60 FPS Video & Dual-Hand Analysis Loop
    */
   private renderLoop(timestamp: number): void {
     if (!this.isRunning) return;
 
-    // 1. Detect Hand Skeleton
+    // 1. Detect Hand Skeletons (1 or 2 hands)
     const isLive = this.cameraManager.isStreaming();
     const detection = this.handTracker.detectHand(this.videoEl, timestamp, isLive);
 
-    if (detection.hasHand && detection.landmarks && detection.landmarks.length === 21) {
+    if (detection.hasHand && detection.hands && detection.hands.length > 0) {
       this.missingHandFrames = 0;
-      const lms = detection.landmarks;
+      this.lastActiveHands = detection.hands;
 
-      // Draw crisp skeleton on canvas
-      this.handTracker.drawSkeleton(this.ctx, lms, this.canvasEl.width, this.canvasEl.height, []);
+      // Update HUD tracking badge with real hand count
+      if (detection.handCount >= 2) {
+        this.trackingStatusBadge.textContent = 'MediaPipe 3D: 2 Hands Locked (42 Joints • 60 FPS)';
+      } else {
+        this.trackingStatusBadge.textContent = `MediaPipe 3D: 1 Hand (${detection.handedness} • 60 FPS)`;
+      }
 
-      // Add to HDC trajectory buffer
-      this.trajectoryBuffer.addFrame(lms);
+      // Draw crisp 3D skeletons for ALL active hands (Right in Cyan, Left in Purple)
+      this.handTracker.drawSkeleton(this.ctx, detection.hands, this.canvasEl.width, this.canvasEl.height);
 
-      // Run Geometric Sign Language Classifier
-      const sign = SignLanguageRecognizer.recognize(lms);
+      // Encode into HDC trajectory buffer (if 2 hands, combines centroids & inter-hand vectors)
+      const primaryHand = detection.hands[0].landmarks;
+      if (detection.hands.length >= 2) {
+        // Combined 2-hand composite representation for HDC
+        const h1 = detection.hands[0].landmarks;
+        const h2 = detection.hands[1].landmarks;
+        const composite: LandmarkPoint[] = [];
+        for (let j = 0; j < 21; j++) {
+          composite.push({
+            x: (h1[j].x + h2[j].x) * 0.5,
+            y: (h1[j].y + h2[j].y) * 0.5,
+            z: Math.hypot(h1[j].x - h2[j].x, h1[j].y - h2[j].y),
+          });
+        }
+        this.trajectoryBuffer.addFrame(composite);
+      } else {
+        this.trajectoryBuffer.addFrame(primaryHand);
+      }
+
+      // 2. Run Robust Sign Language Classifier (Handles 1-Hand AND 2-Hand gestures)
+      const sign = SignLanguageRecognizer.recognize(detection.hands);
       this.latestDetectedSign = sign;
 
       if (sign) {
@@ -427,7 +455,8 @@ class SignVoxApp {
         // Real-Time Speech Synthesis: Speaks out loud!
         this.ttsService.speak(sign.spokenPhrase);
         this.spokenPhraseText.textContent = `"${sign.spokenPhrase}"`;
-        this.similarityPill.textContent = `${Math.round(sign.confidence * 100)}% Confirmed Match`;
+        const handsTag = sign.handCount === 2 ? ' • 2-Hand Gesture' : ' • 1-Hand';
+        this.similarityPill.textContent = `${Math.round(sign.confidence * 100)}% Confirmed${handsTag}`;
         this.similarityPill.className = 'confidence-tag badge-green';
 
         // Add to sentence builder
@@ -441,8 +470,8 @@ class SignVoxApp {
         // Resting or transitional hand
         this.clearActiveSignCards();
         this.hudSignBadge.className = 'hud-sign-badge';
-        this.liveSignIcon.textContent = '✋';
-        this.liveSignTitle.textContent = 'Neutral Hand (Resting)';
+        this.liveSignIcon.textContent = detection.handCount >= 2 ? '👐' : '✋';
+        this.liveSignTitle.textContent = detection.handCount >= 2 ? '2 Hands Active (Neutral)' : '1 Hand Active (Neutral)';
         this.liveSignSub.textContent = 'Awaiting sign language posture...';
         this.similarityPill.textContent = 'Neutral Hand';
         this.similarityPill.className = 'confidence-tag badge-subtle';
@@ -463,9 +492,10 @@ class SignVoxApp {
         this.hudSignBadge.className = 'hud-sign-badge';
         this.liveSignIcon.textContent = '✋';
         this.liveSignTitle.textContent = 'Awaiting Hand Gesture...';
-        this.liveSignSub.textContent = 'Hold your hand in camera frame to speak';
+        this.liveSignSub.textContent = 'Hold 1 or 2 hands in camera frame to speak';
         this.similarityPill.textContent = 'Awaiting Hand';
         this.similarityPill.className = 'confidence-tag badge-subtle';
+        this.trackingStatusBadge.textContent = 'MediaPipe Dual-Hand Model Active (60 FPS)';
         this.latestDetectedSign = null;
       }
     }
@@ -475,6 +505,19 @@ class SignVoxApp {
 
   private updateHudWithSign(sign: SignRecognitionOutput): void {
     const iconMap: Record<string, string> = {
+      // 2-Hand Signs
+      namaste: '🙏',
+      asl_help: '🆘',
+      heart: '❤️',
+      time_out: '🛑',
+      welcome: '👐',
+      receive: '🤲',
+      applause: '👏',
+      home: '🏠',
+      double_thumbs_up: '👍👍',
+      double_peace: '✌️✌️',
+      together: '🤝',
+      // 1-Hand Signs
       hello: '👋',
       thank_you: '🙏',
       yes: '👍',
@@ -489,9 +532,10 @@ class SignVoxApp {
       fist: '✊'
     };
 
-    const icon = iconMap[sign.signKey] || '✋';
+    const icon = iconMap[sign.signKey] || (sign.handCount === 2 ? '👐' : '✋');
+    const handTag = sign.handCount === 2 ? ' (2 HANDS)' : '';
     this.liveSignIcon.textContent = icon;
-    this.liveSignTitle.textContent = sign.signName.toUpperCase();
+    this.liveSignTitle.textContent = `${sign.signName.toUpperCase()}${handTag}`;
     this.liveSignSub.textContent = `Spoken: "${sign.spokenPhrase}"`;
     this.hudSignBadge.className = 'hud-sign-badge active-hud';
   }
@@ -529,11 +573,11 @@ class SignVoxApp {
   }
 
   /**
-   * Tier 2: Gemini 2.0 Flash Multimodal Translation
+   * Tier 2: Gemini 2.0 Flash Multimodal Translation (translates both 1 and 2 hands)
    */
   public async triggerGeminiTranslation(): Promise<void> {
     if (this.geminiStatusBadge) {
-      this.geminiStatusBadge.textContent = '🧠 Gemini Vision Analyzing...';
+      this.geminiStatusBadge.textContent = '🧠 Gemini Vision Analyzing Frame...';
       this.geminiStatusBadge.className = 'badge badge-purple pulse';
     }
 
