@@ -297,6 +297,7 @@ const server = http.createServer((req, res) => {
   }
 
   res.setHeader('Content-Type', mimeType);
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   fs.createReadStream(localPath).pipe(res);
 });
 
