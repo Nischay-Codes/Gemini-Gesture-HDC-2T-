@@ -23,14 +23,14 @@ export function sanitizeApiKey(raw: string): string {
   let cleaned = raw.trim();
   cleaned = cleaned.replace(/^["'`]|["'`]$/g, '').trim();
   cleaned = cleaned.replace(/^(?:GEMINI_API_KEY|API_KEY|key)\s*[:=]\s*/i, '').trim();
-  const match = cleaned.match(/AIzaSy[A-Za-z0-9_-]{25,50}/);
+  const match = cleaned.match(/(?:AIzaSy|AQ\.)[A-Za-z0-9_\-\.]{25,60}/) || cleaned.match(/[A-Za-z0-9_\-\.]{30,65}/);
   if (match) return match[0];
   return cleaned;
 }
 
 export class GeminiService {
   private apiKey: string = '';
-  private activeModel: string = 'gemini-2.0-flash';
+  private activeModel: string = 'gemini-3.1-flash-lite';
   private isProcessing: boolean = false;
   private lastInterpretation: GeminiInterpretation | null = null;
   private onStatusChange: ((status: string, isBusy: boolean) => void) | null = null;
@@ -158,52 +158,43 @@ export class GeminiService {
     }
 
     // 2. Direct browser fetch fallback
-    let modelToUse = 'gemini-2.0-flash';
-    try {
-      let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${cleanKey}`;
-      let res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: 'Respond with: READY' }] }],
-          generationConfig: { maxOutputTokens: 5 }
-        })
-      });
+    const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+    let lastErrMsg = '';
 
-      if (!res.ok && res.status === 404) {
-        modelToUse = 'gemini-1.5-flash';
-        endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${cleanKey}`;
-        res = await fetch(endpoint, {
+    for (const modelToUse of candidateModels) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${cleanKey}`;
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: 'Respond with: READY' }] }],
-            generationConfig: { maxOutputTokens: 5 }
+            contents: [{ parts: [{ text: 'Respond with: READY' }] }]
           })
         });
+
+        const latencyMs = Math.round(performance.now() - t0);
+
+        if (res.ok) {
+          this.apiKey = cleanKey;
+          this.activeModel = modelToUse;
+          localStorage.setItem('GEMINI_API_KEY', cleanKey);
+
+          return {
+            success: true,
+            model: modelToUse,
+            message: `Connected to ${modelToUse} (${latencyMs}ms)`,
+            latencyMs
+          };
+        } else {
+          const errJson = await res.json().catch(() => ({}));
+          lastErrMsg = errJson.error?.message || `HTTP ${res.status}`;
+        }
+      } catch (err: any) {
+        lastErrMsg = err.message || 'Network error';
       }
-
-      const latencyMs = Math.round(performance.now() - t0);
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        const errMsg = errJson.error?.message || `HTTP ${res.status}`;
-        return { success: false, model: modelToUse, message: errMsg, latencyMs };
-      }
-
-      this.apiKey = cleanKey;
-      this.activeModel = modelToUse;
-      localStorage.setItem('GEMINI_API_KEY', cleanKey);
-
-      return {
-        success: true,
-        model: modelToUse,
-        message: `Connected to ${modelToUse} (${latencyMs}ms)`,
-        latencyMs
-      };
-    } catch (err: any) {
-      return { success: false, model: modelToUse, message: err.message || 'Network error', latencyMs: 0 };
     }
+
+    return { success: false, model: this.activeModel, message: lastErrMsg || 'Connection failed', latencyMs: 0 };
   }
 
   /**
@@ -305,7 +296,7 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no comm
       };
 
       let rawText = '';
-      let modelUsed = this.activeModel || 'gemini-2.0-flash';
+      let modelUsed = this.activeModel || 'gemini-3.1-flash-lite';
 
       // 1. Try server proxy (immune to COEP / CORS)
       try {
@@ -330,31 +321,36 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no comm
 
       // 2. Direct browser fetch fallback if proxy did not return
       if (!rawText) {
-        let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelUsed}:generateContent?key=${this.apiKey}`;
-        let response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody)
-        });
+        const candidateModels = [modelUsed, 'gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+        let lastErr = '';
 
-        if (!response.ok && response.status === 404 && modelUsed === 'gemini-2.0-flash') {
-          modelUsed = 'gemini-1.5-flash';
-          this.activeModel = modelUsed;
-          endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelUsed}:generateContent?key=${this.apiKey}`;
-          response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
-          });
+        for (const m of candidateModels) {
+          try {
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${this.apiKey}`;
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(requestBody)
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+              modelUsed = m;
+              this.activeModel = m;
+              break;
+            } else {
+              const errorData = await response.json().catch(() => ({}));
+              lastErr = errorData.error?.message || `HTTP ${response.status}`;
+            }
+          } catch (e: any) {
+            lastErr = e.message;
+          }
         }
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+        if (!rawText && lastErr) {
+          throw new Error(lastErr);
         }
-
-        const data = await response.json();
-        rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
       }
 
       let parsed: any;

@@ -54,7 +54,7 @@ function sanitizeApiKey(raw) {
   let cleaned = raw.trim();
   cleaned = cleaned.replace(/^["'`]|["'`]$/g, '').trim();
   cleaned = cleaned.replace(/^(?:GEMINI_API_KEY|API_KEY|key)\s*[:=]\s*/i, '').trim();
-  const match = cleaned.match(/AIzaSy[A-Za-z0-9_-]{25,50}/);
+  const match = cleaned.match(/(?:AIzaSy|AQ\.)[A-Za-z0-9_\-\.]{25,60}/) || cleaned.match(/[A-Za-z0-9_\-\.]{30,65}/);
   if (match) return match[0];
   return cleaned;
 }
@@ -116,57 +116,53 @@ const server = http.createServer((req, res) => {
         const parsed = JSON.parse(body);
         const cleanKey = sanitizeApiKey(parsed.apiKey);
         if (!cleanKey) {
-          res.end(JSON.stringify({ success: false, message: 'Please enter a valid Gemini API key (starts with AIzaSy...)' }));
+          res.end(JSON.stringify({ success: false, message: 'Please enter a valid Gemini API key' }));
           return;
         }
 
         const t0 = Date.now();
-        let modelInUse = 'gemini-2.0-flash';
-        let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelInUse}:generateContent?key=${cleanKey}`;
+        const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+        let successResult = null;
+        let lastErr = null;
 
-        let googleRes = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: 'Respond with: READY' }] }],
-            generationConfig: { maxOutputTokens: 5 }
-          })
-        });
+        for (const model of candidateModels) {
+          try {
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
+            const googleRes = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: 'Respond with: READY' }] }]
+              })
+            });
 
-        if (!googleRes.ok && googleRes.status === 404) {
-          modelInUse = 'gemini-1.5-flash';
-          endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelInUse}:generateContent?key=${cleanKey}`;
-          googleRes = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: 'Respond with: READY' }] }],
-              generationConfig: { maxOutputTokens: 5 }
-            })
-          });
+            if (googleRes.ok) {
+              const latencyMs = Date.now() - t0;
+              fs.writeFileSync(path.join(__dirname, '.env'), `GEMINI_API_KEY=${cleanKey}\n`, 'utf-8');
+              process.env.GEMINI_API_KEY = cleanKey;
+              successResult = {
+                success: true,
+                model,
+                latencyMs,
+                key: cleanKey,
+                message: `Connected to ${model} (${latencyMs}ms)`
+              };
+              break;
+            } else {
+              const errData = await googleRes.json().catch(() => ({}));
+              lastErr = errData.error?.message || `HTTP ${googleRes.status}`;
+            }
+          } catch (e) {
+            lastErr = e.message;
+          }
         }
 
-        const latencyMs = Date.now() - t0;
-        const resData = await googleRes.json().catch(() => ({}));
-
-        if (googleRes.ok) {
-          fs.writeFileSync(path.join(__dirname, '.env'), `GEMINI_API_KEY=${cleanKey}\n`, 'utf-8');
-          process.env.GEMINI_API_KEY = cleanKey;
-
-          res.end(JSON.stringify({
-            success: true,
-            model: modelInUse,
-            latencyMs,
-            key: cleanKey,
-            message: `Connected to ${modelInUse} (${latencyMs}ms)`
-          }));
+        if (successResult) {
+          res.end(JSON.stringify(successResult));
         } else {
-          const errMsg = resData.error?.message || `Google API returned HTTP ${googleRes.status}`;
           res.end(JSON.stringify({
             success: false,
-            model: modelInUse,
-            message: errMsg,
-            code: resData.error?.code || googleRes.status
+            message: lastErr || 'Could not validate Gemini key'
           }));
         }
       } catch (err) {
@@ -200,28 +196,36 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        let model = parsed.model || 'gemini-2.0-flash';
-        let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        const candidateModels = [parsed.model || 'gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+        let successData = null;
+        let lastStatus = 500;
+        let lastErr = null;
 
-        let googleRes = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(parsed.requestBody)
-        });
+        for (const model of candidateModels) {
+          try {
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+            const googleRes = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(parsed.requestBody)
+            });
 
-        if (!googleRes.ok && googleRes.status === 404 && model === 'gemini-2.0-flash') {
-          model = 'gemini-1.5-flash';
-          endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-          googleRes = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(parsed.requestBody)
-          });
+            const data = await googleRes.json().catch(() => ({}));
+            if (googleRes.ok) {
+              successData = { ...data, _modelInUse: model };
+              lastStatus = 200;
+              break;
+            } else {
+              lastStatus = googleRes.status;
+              lastErr = data;
+            }
+          } catch (e) {
+            lastErr = { error: { message: e.message } };
+          }
         }
 
-        const data = await googleRes.json().catch(() => ({}));
-        res.statusCode = googleRes.status;
-        res.end(JSON.stringify({ ...data, _modelInUse: model }));
+        res.statusCode = lastStatus;
+        res.end(JSON.stringify(successData || lastErr));
       } catch (err) {
         res.statusCode = 500;
         res.end(JSON.stringify({ error: { message: err.message } }));
