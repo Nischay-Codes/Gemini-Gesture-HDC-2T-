@@ -97,6 +97,17 @@ class SignVoxApp {
   private btnRecordCustomSign: HTMLButtonElement;
   private customTrainerStatus: HTMLElement;
 
+  // View Switcher Elements
+  private showcaseView: HTMLElement | null;
+  private communicatorView: HTMLElement | null;
+  private tabBtnShowcase: HTMLElement | null;
+  private tabBtnCommunicator: HTMLElement | null;
+  private navLogoBtn: HTMLElement | null;
+  private btnHeroLaunchApp: HTMLElement | null;
+  private btnHeroInteractiveDemo: HTMLElement | null;
+  private btnHeroViewTech: HTMLElement | null;
+  private btnBottomLaunchApp: HTMLElement | null;
+
   // App State
   private isMirrored: boolean = true;
   private isRunning: boolean = false;
@@ -108,6 +119,17 @@ class SignVoxApp {
   private pendingSignFrames: number = 0;
 
   constructor() {
+    // 0. View Switcher Elements
+    this.showcaseView = document.getElementById('showcase-view');
+    this.communicatorView = document.getElementById('communicator-view');
+    this.tabBtnShowcase = document.getElementById('tab-btn-showcase');
+    this.tabBtnCommunicator = document.getElementById('tab-btn-communicator');
+    this.navLogoBtn = document.getElementById('nav-logo-btn');
+    this.btnHeroLaunchApp = document.getElementById('btn-hero-launch-app');
+    this.btnHeroInteractiveDemo = document.getElementById('btn-hero-interactive-demo');
+    this.btnHeroViewTech = document.getElementById('btn-hero-view-tech');
+    this.btnBottomLaunchApp = document.getElementById('btn-bottom-launch-app');
+
     // 1. Viewport & Camera
     this.videoEl = document.getElementById('webcam-video') as HTMLVideoElement;
     this.canvasEl = document.getElementById('skeleton-canvas') as HTMLCanvasElement;
@@ -332,6 +354,63 @@ class SignVoxApp {
    * Sets up all UI button click handlers & keyboard shortcuts
    */
   private setupEventListeners(): void {
+    // 0. Showcase View & Communicator View Switcher Handlers
+    const switchToCommunicator = async () => {
+      this.tabBtnShowcase?.classList.remove('active');
+      this.tabBtnCommunicator?.classList.add('active');
+      if (this.showcaseView) this.showcaseView.style.display = 'none';
+      if (this.communicatorView) this.communicatorView.style.display = 'grid';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      // If camera is not streaming, start it automatically
+      if (!this.cameraManager.isStreaming()) {
+        const ok = await this.cameraManager.startCamera();
+        if (ok && this.cameraStartPrompt) {
+          this.cameraStartPrompt.style.display = 'none';
+        }
+      }
+    };
+
+    const switchToShowcase = () => {
+      this.tabBtnCommunicator?.classList.remove('active');
+      this.tabBtnShowcase?.classList.add('active');
+      if (this.communicatorView) this.communicatorView.style.display = 'none';
+      if (this.showcaseView) this.showcaseView.style.display = 'block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    this.tabBtnShowcase?.addEventListener('click', switchToShowcase);
+    this.navLogoBtn?.addEventListener('click', switchToShowcase);
+    this.tabBtnCommunicator?.addEventListener('click', switchToCommunicator);
+    this.btnHeroLaunchApp?.addEventListener('click', switchToCommunicator);
+    this.btnBottomLaunchApp?.addEventListener('click', switchToCommunicator);
+
+    this.btnHeroInteractiveDemo?.addEventListener('click', () => {
+      document.getElementById('section-voice-previews')?.scrollIntoView({ behavior: 'smooth' });
+    });
+
+    this.btnHeroViewTech?.addEventListener('click', () => {
+      document.getElementById('section-architecture')?.scrollIntoView({ behavior: 'smooth' });
+    });
+
+    // Wire up Voice Preview Cards on Showcase Landing Page
+    document.querySelectorAll<HTMLElement>('.voice-preview-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const phrase = card.dataset.phrase;
+        if (phrase) {
+          this.ttsService.speak(phrase, true);
+          card.style.transform = 'scale(0.98)';
+          setTimeout(() => { card.style.transform = ''; }, 180);
+        }
+      });
+    });
+
+    // Check URL parameters for direct view routing
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('view') === 'app' || urlParams.get('tab') === 'communicator' || window.location.hash === '#app') {
+      switchToCommunicator();
+    }
+
     // API Key Save
     this.btnSaveInlineKey.addEventListener('click', () => this.handleSaveApiKey());
     this.inputInlineGeminiKey.addEventListener('keydown', (e) => {
