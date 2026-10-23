@@ -1,0 +1,9 @@
+{
+  "name": "gemini-gesture-hdc",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 3000",
+    "test": "node test_kernel.mjs"
+  }
+}
