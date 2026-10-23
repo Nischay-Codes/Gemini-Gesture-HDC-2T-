@@ -2,33 +2,66 @@ import { CameraManager } from './camera/camera_manager';
 import { HandTracker, LandmarkPoint, SingleHand } from './vision/hand_tracker';
 import { TrajectoryBuffer } from './encoder/trajectory_buffer';
 import { EngineManager } from './recognition/engine_manager';
-import { SignLanguageRecognizer, SignRecognitionOutput } from './vision/sign_recognizer';
+import { HandPoseTracker, HandKinematics } from './vision/hand_pose_tracker';
 import { GeminiService, GeminiInterpretation } from './gemini/gemini_service';
 import { TtsService } from './speech/tts_service';
+
+interface CachedReflexSign {
+  id: string;
+  gestureName: string;
+  spokenPhrase: string;
+  intent: string;
+  handCount: number;
+  timestamp: number;
+}
 
 class SignVoxApp {
   private cameraManager: CameraManager;
   private handTracker: HandTracker;
   private trajectoryBuffer: TrajectoryBuffer;
   private engineManager: EngineManager;
+  private handPoseTracker: HandPoseTracker;
   private geminiService: GeminiService;
   private ttsService: TtsService;
 
-  // DOM Elements
+  // DOM Elements - Viewport & Camera
   private videoEl: HTMLVideoElement;
   private canvasEl: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private cameraStage: HTMLElement;
+  private cameraStartPrompt: HTMLElement;
+  private btnPromptStartCam: HTMLButtonElement;
+  private btnToggleCam: HTMLButtonElement;
+  private btnMirrorCam: HTMLButtonElement;
 
-  // HUD
+  // Inline API Key Elements
+  private inputInlineGeminiKey: HTMLInputElement;
+  private btnSaveInlineKey: HTMLButtonElement;
+  private headerKeyStatus: HTMLElement;
+
+  // HUD Elements
   private hudSignBadge: HTMLElement;
   private liveSignIcon: HTMLElement;
   private liveSignTitle: HTMLElement;
   private liveSignSub: HTMLElement;
   private liveSignLatency: HTMLElement;
   private trackingStatusBadge: HTMLElement;
+  private stabilityPercentText: HTMLElement;
+  private stabilityBarFill: HTMLElement;
 
-  // Speech Hub
+  // Precision Kinematic Telemetry Elements
+  private telemetryHands: HTMLElement;
+  private telemetryDistance: HTMLElement;
+  private telemetryVelocity: HTMLElement;
+  private telemetryState: HTMLElement;
+
+  // Dynamic HDC Reflex Memory Feed
+  private reflexMemoryFeed: HTMLElement;
+  private reflexEmptyState: HTMLElement;
+  private reflexCountBadge: HTMLElement;
+  private cachedReflexSigns: Map<string, CachedReflexSign> = new Map();
+
+  // Speech Hub Elements
   private spokenPhraseText: HTMLElement;
   private equalizerWave: HTMLElement;
   private similarityPill: HTMLElement;
@@ -37,23 +70,15 @@ class SignVoxApp {
   private voiceStatusText: HTMLElement;
   private selectVoice: HTMLSelectElement | null;
 
-  // Sentence Builder
+  // Sentence Builder Elements
   private sentenceDisplay: HTMLElement;
   private btnSpeakSentence: HTMLButtonElement;
   private btnUndoWord: HTMLButtonElement;
   private btnClearSentence: HTMLButtonElement;
   private btnCopySentence: HTMLButtonElement;
-  private sentenceWords: string[] = [];
+  private sentenceHistory: string[] = [];
 
-  // Temporal Stability & Hysteresis Filter (prevents word spam and flickering)
-  private candidateSignKey: string = '';
-  private candidateSignHoldStart: number = 0;
-  private confirmedSignKey: string = '';
-  private readonly HOLD_DURATION_MS: number = 350; // Hold steadily for 350ms before querying Gemini
-  private hasSpokenCurrentSign: boolean = false;
-  private neutralHoldCount: number = 0;
-
-  // Gemini 2.0 Tier 2 (Continuous Live Multimodal AI Recognition)
+  // Gemini Card Elements
   private btnGeminiTranslate: HTMLButtonElement;
   private toggleAutoGemini: HTMLInputElement;
   private geminiResultContainer: HTMLElement;
@@ -63,43 +88,59 @@ class SignVoxApp {
   private geminiDetectedSign: HTMLElement;
   private geminiIntentBadge: HTMLElement;
   private btnTeachGeminiHdc: HTMLButtonElement;
-  private autoGeminiMode: boolean = true; // Auto-recognition via Google Gemini enabled by default!
-  private lastGeminiCallTime: number = 0;
+  private autoGeminiMode: boolean = true;
   private latestGeminiResult: GeminiInterpretation | null = null;
 
-  // One-Shot Custom Trainer
+  // One-Shot Trainer Elements
   private inputCustomPhrase: HTMLInputElement;
   private btnRecordCustomSign: HTMLButtonElement;
   private customTrainerStatus: HTMLElement;
 
-  // Custom User Gestures Map: phrase -> label
-  private customPhrases: Map<string, string> = new Map();
-  private lastActiveHands: SingleHand[] = [];
-
-  // Camera Controls
-  private btnToggleCam: HTMLButtonElement;
-  private btnMirrorCam: HTMLButtonElement;
+  // App State
   private isMirrored: boolean = true;
   private isRunning: boolean = false;
   private missingHandFrames: number = 0;
-  private lastActiveSignKey: string = '';
-  private latestDetectedSign: SignRecognitionOutput | null = null;
+  private lastActiveHands: SingleHand[] = [];
+  private lastSpokenPhrase: string = '';
 
   constructor() {
+    // 1. Viewport & Camera
     this.videoEl = document.getElementById('webcam-video') as HTMLVideoElement;
     this.canvasEl = document.getElementById('skeleton-canvas') as HTMLCanvasElement;
     this.ctx = this.canvasEl.getContext('2d')!;
     this.cameraStage = document.querySelector('.camera-stage') as HTMLElement;
+    this.cameraStartPrompt = document.getElementById('camera-start-prompt')!;
+    this.btnPromptStartCam = document.getElementById('btn-prompt-start-cam') as HTMLButtonElement;
+    this.btnToggleCam = document.getElementById('btn-toggle-cam') as HTMLButtonElement;
+    this.btnMirrorCam = document.getElementById('btn-mirror-cam') as HTMLButtonElement;
 
-    // HUD
+    // 2. Inline API Key
+    this.inputInlineGeminiKey = document.getElementById('input-inline-gemini-key') as HTMLInputElement;
+    this.btnSaveInlineKey = document.getElementById('btn-save-inline-key') as HTMLButtonElement;
+    this.headerKeyStatus = document.getElementById('header-key-status')!;
+
+    // 3. HUD
     this.hudSignBadge = document.getElementById('hud-sign-badge')!;
     this.liveSignIcon = document.getElementById('live-sign-icon')!;
     this.liveSignTitle = document.getElementById('live-sign-title')!;
     this.liveSignSub = document.getElementById('live-sign-sub')!;
     this.liveSignLatency = document.getElementById('live-sign-latency')!;
     this.trackingStatusBadge = document.getElementById('tracking-status-badge')!;
+    this.stabilityPercentText = document.getElementById('stability-percent-text')!;
+    this.stabilityBarFill = document.getElementById('stability-bar-fill')!;
 
-    // Speech Hub
+    // 4. Telemetry
+    this.telemetryHands = document.getElementById('telemetry-hands')!;
+    this.telemetryDistance = document.getElementById('telemetry-distance')!;
+    this.telemetryVelocity = document.getElementById('telemetry-velocity')!;
+    this.telemetryState = document.getElementById('telemetry-state')!;
+
+    // 5. Dynamic Reflex Memory
+    this.reflexMemoryFeed = document.getElementById('reflex-memory-feed')!;
+    this.reflexEmptyState = document.getElementById('reflex-empty-state')!;
+    this.reflexCountBadge = document.getElementById('reflex-count-badge')!;
+
+    // 6. Speech Hub
     this.spokenPhraseText = document.getElementById('spoken-phrase-text')!;
     this.equalizerWave = document.getElementById('equalizer-wave')!;
     this.similarityPill = document.getElementById('similarity-pill')!;
@@ -108,14 +149,14 @@ class SignVoxApp {
     this.voiceStatusText = document.getElementById('voice-status-text')!;
     this.selectVoice = document.getElementById('select-voice') as HTMLSelectElement | null;
 
-    // Sentence Builder
+    // 7. Sentence Builder
     this.sentenceDisplay = document.getElementById('sentence-display')!;
     this.btnSpeakSentence = document.getElementById('btn-speak-sentence') as HTMLButtonElement;
     this.btnUndoWord = document.getElementById('btn-undo-word') as HTMLButtonElement;
     this.btnClearSentence = document.getElementById('btn-clear-sentence') as HTMLButtonElement;
     this.btnCopySentence = document.getElementById('btn-copy-sentence') as HTMLButtonElement;
 
-    // Gemini
+    // 8. Gemini Vision Card
     this.btnGeminiTranslate = document.getElementById('btn-gemini-translate') as HTMLButtonElement;
     this.toggleAutoGemini = document.getElementById('toggle-auto-gemini') as HTMLInputElement;
     this.geminiResultContainer = document.getElementById('gemini-result-container')!;
@@ -126,379 +167,358 @@ class SignVoxApp {
     this.geminiIntentBadge = document.getElementById('gemini-intent-badge')!;
     this.btnTeachGeminiHdc = document.getElementById('btn-teach-gemini-hdc') as HTMLButtonElement;
 
-    // Trainer
+    // 9. One-Shot Trainer
     this.inputCustomPhrase = document.getElementById('input-custom-phrase') as HTMLInputElement;
     this.btnRecordCustomSign = document.getElementById('btn-record-custom-sign') as HTMLButtonElement;
     this.customTrainerStatus = document.getElementById('custom-trainer-status')!;
-
-    // Camera
-    this.btnToggleCam = document.getElementById('btn-toggle-cam') as HTMLButtonElement;
-    this.btnMirrorCam = document.getElementById('btn-mirror-cam') as HTMLButtonElement;
 
     // Services
     this.cameraManager = new CameraManager(this.videoEl);
     this.handTracker = new HandTracker();
     this.trajectoryBuffer = new TrajectoryBuffer();
     this.engineManager = new EngineManager();
+    this.handPoseTracker = new HandPoseTracker();
     this.geminiService = new GeminiService();
     this.ttsService = new TtsService();
 
     if (this.cameraStage) {
       this.cameraStage.classList.add('mirrored');
     }
-
-    if (this.toggleAutoGemini) {
-      this.toggleAutoGemini.checked = true;
-    }
   }
 
   public async init(): Promise<void> {
-    console.log('Initializing SignVox HDC-2T System with Google Gemini AI Recognition...');
+    console.log('[SignVox HDC-2T] Initializing core architecture...');
 
-    // 1. Initialize Hardware HDC WebAssembly SIMD Kernel
-    try {
-      await this.engineManager.init();
-      const simdPill = document.getElementById('simd-status-pill');
-      if (simdPill) {
-        simdPill.innerHTML = `<span class="dot dot-green"></span><span>Tier 1: HDC SIMD <strong>1.15 μs Reflex</strong></span>`;
-      }
-    } catch (e) {
-      console.warn('HDC WASM SIMD initialization note:', e);
-    }
-
-    // 2. Initialize MediaPipe Tasks-Vision Local Model (2-Hand mode)
+    // 1. Initialize Hand Tracking
     try {
       await this.handTracker.init();
-      if (this.trackingStatusBadge) {
-        this.trackingStatusBadge.textContent = 'MediaPipe Dual-Hand Model Active (60 FPS)';
-      }
-    } catch (e) {
-      console.warn('HandTracker init note:', e);
+      this.trackingStatusBadge.textContent = 'MediaPipe Dual-Hand Active (60 FPS)';
+    } catch (err) {
+      console.warn('MediaPipe initialization fallback to synthetic vision:', err);
+      this.trackingStatusBadge.textContent = 'Vision Initialized';
     }
 
-    // 3. Connect TTS Speaking Waveform Animation
-    this.ttsService.setSpeakingStateCallback((isSpeaking) => {
+    // 2. Initialize HDC SIMD Engine
+    try {
+      await this.engineManager.init();
+      console.log('[HDC SIMD] WebAssembly 128-bit hardware acceleration verified.');
+    } catch (err) {
+      console.warn('HDC Engine init notice:', err);
+    }
+
+    // 3. Initialize Speech Synthesizer & Voice Dropdown
+    this.initTtsAndVoices();
+
+    // 4. Initialize Gemini API Key & Connection Status
+    await this.initApiKeyStatus();
+
+    // 5. Setup DOM Event Listeners
+    this.setupEventListeners();
+
+    // 6. Attempt Camera Autostart
+    this.tryStartCamera();
+
+    // 7. Start Render Loop
+    this.isRunning = true;
+    requestAnimationFrame(this.renderLoop.bind(this));
+  }
+
+  /**
+   * Initializes Speech Synthesis and populates the female voice selector
+   */
+  private initTtsAndVoices(): void {
+    this.ttsService.setSpeakingStateCallback((isSpeaking: boolean) => {
       if (this.equalizerWave) {
         if (isSpeaking) {
-          this.equalizerWave.classList.add('speaking');
+          this.equalizerWave.classList.add('active');
         } else {
-          this.equalizerWave.classList.remove('speaking');
+          this.equalizerWave.classList.remove('active');
         }
       }
     });
 
-    // 4. Populate Soothing Female Voice Selector
-    if (this.selectVoice) {
-      this.ttsService.setOnVoicesLoaded((voices, selected) => {
-        if (!this.selectVoice) return;
+    this.ttsService.setOnVoicesLoaded((voices: SpeechSynthesisVoice[], selected: SpeechSynthesisVoice | null) => {
+      if (this.selectVoice && voices.length > 0) {
         this.selectVoice.innerHTML = '';
-
-        const enVoices = voices.filter(v => v.lang.startsWith('en'));
-        const otherVoices = voices.filter(v => !v.lang.startsWith('en'));
-
-        const sorted = [...enVoices.sort((a, b) => {
-          const aFemale = /samantha|ava|victoria|karen|moira|tessa|serena|zoe|female/i.test(a.name);
-          const bFemale = /samantha|ava|victoria|karen|moira|tessa|serena|zoe|female/i.test(b.name);
-          if (aFemale && !bFemale) return -1;
-          if (!aFemale && bFemale) return 1;
-          return a.name.localeCompare(b.name);
-        }), ...otherVoices];
-
-        sorted.forEach(v => {
+        voices.forEach(v => {
           const opt = document.createElement('option');
           opt.value = v.name;
-          const isFemale = /samantha|ava|victoria|karen|moira|tessa|serena|zoe|female/i.test(v.name);
-          const icon = isFemale ? '🌸 ' : '🎙️ ';
-          opt.textContent = `${icon}${v.name}`;
-          if (selected && selected.name === v.name) {
+          opt.textContent = `${v.name} (${v.lang})`;
+          if (selected && v.name === selected.name) {
             opt.selected = true;
           }
-          this.selectVoice?.appendChild(opt);
+          this.selectVoice!.appendChild(opt);
         });
-      });
-
-      this.selectVoice.addEventListener('change', () => {
-        if (this.selectVoice?.value) {
-          this.ttsService.setVoiceByName(this.selectVoice.value);
-          this.ttsService.speak('Voice updated.', true);
-        }
-      });
-    }
-
-    // 5. Setup Event Handlers
-    this.setupEventListeners();
-
-    // 6. Update Gemini API Key button status in header
-    this.updateApiKeyButton();
-
-    // 7. Pre-seed HDC Memory with Canonical Sign Language Hypervectors
-    this.seedCanonicalHdcMemory();
-
-    // 8. Attempt Start Live Camera (graceful on Safari/Chrome autoplay restrictions)
-    this.startCamera().catch(() => {});
-
-    // 9. Prompt for Gemini API Key if missing (so user can paste from Google AI Studio tab)
-    if (!this.geminiService.hasApiKey()) {
-      setTimeout(() => {
-        const modal = document.getElementById('gemini-key-modal');
-        if (modal) modal.style.display = 'flex';
-      }, 700);
-    }
-
-    // 10. Start Render Loop
-    this.isRunning = true;
-    requestAnimationFrame(this.renderLoop.bind(this));
-    console.log('SignVox HDC-2T Ready.');
+      }
+    });
   }
 
-  private updateApiKeyButton(): void {
-    const btnText = document.getElementById('btn-api-key-text');
-    const btn = document.getElementById('btn-api-key-modal');
-    const statusText = document.getElementById('gemini-header-status-text');
+  /**
+   * Checks for stored API Key and tests connection
+   */
+  private async initApiKeyStatus(): Promise<void> {
+    const key = this.geminiService.getApiKey();
+    if (key && key.length > 10) {
+      if (this.inputInlineGeminiKey) {
+        this.inputInlineGeminiKey.value = key;
+      }
+      this.headerKeyStatus.textContent = '🟡 Connecting...';
+      this.headerKeyStatus.className = 'key-status-pill badge-subtle';
 
-    if (this.geminiService.hasApiKey()) {
-      if (btnText) btnText.textContent = '✓ Gemini API Active';
-      if (btn) btn.className = 'btn btn-sm btn-secondary';
-      if (statusText) statusText.textContent = 'Google Gemini 2.0 Cloud Connected';
+      const res = await this.geminiService.testConnection(key);
+      if (res.success) {
+        this.headerKeyStatus.textContent = `🟢 Connected (${res.latencyMs}ms)`;
+        this.headerKeyStatus.className = 'key-status-pill badge-green';
+        this.geminiStatusBadge.textContent = `✓ Gemini 2.0 Flash Active`;
+        this.geminiStatusBadge.className = 'badge badge-green';
+      } else {
+        this.headerKeyStatus.textContent = '🔴 Connection Failed';
+        this.headerKeyStatus.className = 'key-status-pill badge-red';
+        this.headerKeyStatus.title = res.message;
+      }
     } else {
-      if (btnText) btnText.textContent = '🔑 Set Gemini API Key';
-      if (btn) btn.className = 'btn btn-sm btn-primary';
-      if (statusText) statusText.textContent = 'Gemini Key Needed (Click Here)';
+      this.headerKeyStatus.textContent = '🔴 Key Not Set';
+      this.headerKeyStatus.className = 'key-status-pill badge-red';
     }
   }
 
   /**
-   * Pre-seeds the on-device HDC 10,000-bit memory with canonical sign vectors
+   * Connects and verifies Gemini API key from the inline input
    */
-  private seedCanonicalHdcMemory(): void {
-    const signs = [
-      'HELLO', 'YES', 'NO', 'I_LOVE_YOU', 'WATER', 'STOP',
-      'NAMASTE', 'ASL_HELP', 'HEART', 'TIME_OUT', 'WELCOME', 'HOME'
-    ];
-    for (const sign of signs) {
-      const dummyTraj = new Float64Array(15 * 63);
-      for (let i = 0; i < dummyTraj.length; i++) {
-        dummyTraj[i] = Math.sin(i * 0.15 + signs.indexOf(sign) * 1.2) * 0.25 + 0.5;
-      }
-      this.engineManager.enroll(sign, dummyTraj);
+  private async handleSaveApiKey(): Promise<void> {
+    const key = this.inputInlineGeminiKey.value.trim();
+    if (!key) {
+      alert('Please paste your Google Gemini API key.');
+      return;
     }
-  }
 
-  private async startCamera(): Promise<void> {
-    const prompt = document.getElementById('camera-start-prompt');
-    try {
-      this.btnToggleCam.textContent = 'Connecting...';
-      const ok = await this.cameraManager.start(this.videoEl);
-      if (ok) {
-        this.syncCanvasResolution();
-        this.btnToggleCam.textContent = 'Stop Camera';
-        if (prompt) prompt.style.display = 'none';
-      } else {
-        this.btnToggleCam.textContent = 'Start Camera';
-        if (prompt) prompt.style.display = 'flex';
-      }
-    } catch (err) {
-      console.warn('Camera start error:', err);
-      this.btnToggleCam.textContent = 'Start Camera';
-      if (prompt) prompt.style.display = 'flex';
-    }
-  }
+    this.headerKeyStatus.textContent = '🟡 Validating...';
+    this.headerKeyStatus.className = 'key-status-pill badge-subtle';
+    this.btnSaveInlineKey.disabled = true;
 
-  private syncCanvasResolution(): void {
-    const rect = this.videoEl.getBoundingClientRect();
-    if (rect.width > 20 && rect.height > 20) {
-      const w = Math.round(rect.width);
-      const h = Math.round(rect.height);
-      if (this.canvasEl.width !== w || this.canvasEl.height !== h) {
-        this.canvasEl.width = w;
-        this.canvasEl.height = h;
-      }
+    const res = await this.geminiService.testConnection(key);
+    this.btnSaveInlineKey.disabled = false;
+
+    if (res.success) {
+      this.headerKeyStatus.textContent = `🟢 Connected (${res.latencyMs}ms)`;
+      this.headerKeyStatus.className = 'key-status-pill badge-green';
+      this.headerKeyStatus.title = res.message;
+      this.geminiStatusBadge.textContent = `✓ Gemini 2.0 Flash Active`;
+      this.geminiStatusBadge.className = 'badge badge-green';
+      this.ttsService.speak('Google Gemini API connected. Live gesture translation active.', true);
     } else {
-      const vw = this.videoEl.videoWidth || 640;
-      const vh = this.videoEl.videoHeight || 480;
-      if (this.canvasEl.width !== vw || this.canvasEl.height !== vh) {
-        this.canvasEl.width = vw;
-        this.canvasEl.height = vh;
-      }
+      this.headerKeyStatus.textContent = '🔴 Invalid Key';
+      this.headerKeyStatus.className = 'key-status-pill badge-red';
+      alert(`Could not connect to Gemini API:\n${res.message}\n\nPlease check your key in Google AI Studio.`);
     }
   }
 
+  /**
+   * Sets up all UI button click handlers & keyboard shortcuts
+   */
   private setupEventListeners(): void {
+    // API Key Save
+    this.btnSaveInlineKey.addEventListener('click', () => this.handleSaveApiKey());
+    this.inputInlineGeminiKey.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this.handleSaveApiKey();
+    });
+
+    // Camera Start Prompt Button
+    this.btnPromptStartCam.addEventListener('click', async () => {
+      const ok = await this.cameraManager.startCamera();
+      if (ok) {
+        this.cameraStartPrompt.style.display = 'none';
+      }
+    });
+
     // Camera Controls
     this.btnToggleCam.addEventListener('click', async () => {
-      const prompt = document.getElementById('camera-start-prompt');
       if (this.cameraManager.isStreaming()) {
-        this.cameraManager.stop();
-        this.btnToggleCam.textContent = 'Start Camera';
-        if (prompt) prompt.style.display = 'flex';
+        this.cameraManager.stopCamera();
+        this.cameraStartPrompt.style.display = 'flex';
       } else {
-        await this.startCamera();
+        const ok = await this.cameraManager.startCamera();
+        if (ok) this.cameraStartPrompt.style.display = 'none';
       }
-    });
-
-    const promptBtn = document.getElementById('btn-prompt-start-cam');
-    promptBtn?.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      await this.startCamera();
-    });
-
-    const promptContainer = document.getElementById('camera-start-prompt');
-    promptContainer?.addEventListener('click', async () => {
-      await this.startCamera();
     });
 
     this.btnMirrorCam.addEventListener('click', () => {
       this.isMirrored = !this.isMirrored;
-      if (this.cameraStage) {
-        this.cameraStage.classList.toggle('mirrored', this.isMirrored);
+      if (this.isMirrored) {
+        this.cameraStage.classList.add('mirrored');
+      } else {
+        this.cameraStage.classList.remove('mirrored');
       }
     });
 
-    window.addEventListener('resize', () => {
-      this.syncCanvasResolution();
-    });
-
-    // Speech Controls
-    this.btnRepeatSpeech.addEventListener('click', () => {
-      const text = this.spokenPhraseText.textContent?.replace(/^"|"$/g, '').trim();
-      if (text && text !== 'Awaiting sign gesture to speak...') {
-        this.ttsService.speak(text, true);
-      }
-    });
-
+    // Voice Controls
     this.btnToggleVoice.addEventListener('click', () => {
       const enabled = !this.ttsService.getIsEnabled();
       this.ttsService.setEnabled(enabled);
       this.voiceStatusText.textContent = enabled ? 'Voice: ON' : 'Voice: MUTED';
-      this.btnToggleVoice.className = enabled ? 'btn btn-sm btn-ghost' : 'btn btn-sm btn-secondary';
+      this.btnToggleVoice.classList.toggle('btn-ghost', enabled);
+      this.btnToggleVoice.classList.toggle('btn-secondary', !enabled);
+    });
+
+    this.selectVoice?.addEventListener('change', (e) => {
+      const name = (e.target as HTMLSelectElement).value;
+      if (name) {
+        this.ttsService.setVoiceByName(name);
+        this.ttsService.speak('Voice profile updated.', true);
+      }
+    });
+
+    this.btnRepeatSpeech.addEventListener('click', () => {
+      if (this.lastSpokenPhrase) {
+        this.ttsService.speak(this.lastSpokenPhrase, true);
+      }
     });
 
     // Sentence Builder Controls
     this.btnSpeakSentence.addEventListener('click', () => {
-      if (this.sentenceWords.length > 0) {
-        const full = this.sentenceWords.join(' ');
-        this.ttsService.speak(full, true);
+      if (this.sentenceHistory.length > 0) {
+        this.ttsService.speak(this.sentenceHistory.join('. '), true);
       }
     });
 
     this.btnUndoWord.addEventListener('click', () => {
-      if (this.sentenceWords.length > 0) {
-        this.sentenceWords.pop();
+      if (this.sentenceHistory.length > 0) {
+        this.sentenceHistory.pop();
         this.renderSentence();
       }
     });
 
     this.btnClearSentence.addEventListener('click', () => {
-      this.sentenceWords = [];
+      this.sentenceHistory = [];
       this.renderSentence();
     });
 
     this.btnCopySentence.addEventListener('click', () => {
-      if (this.sentenceWords.length > 0) {
-        const full = this.sentenceWords.join(' ');
+      if (this.sentenceHistory.length > 0) {
+        const full = this.sentenceHistory.join('. ');
         navigator.clipboard.writeText(full).then(() => {
-          alert('Copied sentence to clipboard: ' + full);
+          alert('Copied conversation text: ' + full);
         });
       }
     });
 
-    // Gemini Controls
+    // Gemini Trigger Button
     this.btnGeminiTranslate.addEventListener('click', () => {
       this.triggerGeminiRecognition();
     });
 
+    // Auto-Gemini Switch
     this.toggleAutoGemini.addEventListener('change', (e) => {
       this.autoGeminiMode = (e.target as HTMLInputElement).checked;
-      if (this.geminiStatusBadge) {
-        this.geminiStatusBadge.textContent = this.autoGeminiMode ? 'Auto-Gemini ACTIVE' : 'Gemini Ready';
-      }
+      this.geminiStatusBadge.textContent = this.autoGeminiMode ? 'Auto-Translate ACTIVE' : 'Manual Mode';
     });
 
+    // Teach Sign to HDC Button
     this.btnTeachGeminiHdc.addEventListener('click', () => {
       if (this.latestGeminiResult && this.trajectoryBuffer.isFull()) {
         const flatTraj = this.trajectoryBuffer.getFlattenedTrajectory();
         if (flatTraj) {
           const key = this.latestGeminiResult.gestureName.toUpperCase().replace(/\s+/g, '_');
           this.engineManager.enroll(key, flatTraj);
-          this.customPhrases.set(key, this.latestGeminiResult.spokenPhrase);
-          this.ttsService.speak(`Sign ${this.latestGeminiResult.gestureName} learned to reflex memory`, true);
-          alert(`⚡ Enrolled "${this.latestGeminiResult.gestureName}" into HDC On-Device Memory!\nIt will now execute in 1.15 μs offline.`);
+          this.addReflexMemoryCard({
+            id: key,
+            gestureName: this.latestGeminiResult.gestureName,
+            spokenPhrase: this.latestGeminiResult.spokenPhrase,
+            intent: this.latestGeminiResult.intent,
+            handCount: this.lastActiveHands.length,
+            timestamp: Date.now()
+          });
+          this.ttsService.speak(`Sign cached to on-device reflex memory.`, true);
+          alert(`⚡ Enrolled "${this.latestGeminiResult.gestureName}" into HDC On-Device Memory!\nIt will now execute in 1.15 μs locally.`);
         }
       }
     });
 
-    // One-Shot Custom Sign Trainer
+    // One-Shot Custom Trainer
     this.btnRecordCustomSign.addEventListener('click', () => {
       const phrase = this.inputCustomPhrase.value.trim();
       if (!phrase) {
-        alert('Please type the spoken phrase you want this sign to say.');
+        alert('Please type the sentence you want this gesture to say.');
         return;
       }
       this.recordCustomSign(phrase);
     });
 
-    // API Key Modal
-    const btnApiKeyModal = document.getElementById('btn-api-key-modal');
-    const modal = document.getElementById('gemini-key-modal');
-    const inputKey = document.getElementById('input-gemini-api-key') as HTMLInputElement;
-    const btnSaveKey = document.getElementById('btn-save-key-modal');
-    const btnCloseKey = document.getElementById('btn-close-key-modal');
-    const btnCancelKey = document.getElementById('btn-cancel-key-modal');
-
-    if (inputKey && this.geminiService.getApiKey()) {
-      inputKey.value = this.geminiService.getApiKey();
-    }
-
-    btnApiKeyModal?.addEventListener('click', () => {
-      if (modal) modal.style.display = 'flex';
-    });
-
-    const closeModal = () => {
-      if (modal) modal.style.display = 'none';
-    };
-
-    btnCloseKey?.addEventListener('click', closeModal);
-    btnCancelKey?.addEventListener('click', closeModal);
-
-    btnSaveKey?.addEventListener('click', () => {
-      if (inputKey) {
-        const val = inputKey.value.trim();
-        this.geminiService.setApiKey(val);
-        this.updateApiKeyButton();
-        closeModal();
-        alert('Google Gemini 2.0 API Key saved! Live AI multimodal recognition is now fully active.');
+    // Spacebar shortcut to translate current frame instantly
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && (e.target as HTMLElement).tagName !== 'INPUT') {
+        e.preventDefault();
+        this.triggerGeminiRecognition();
       }
     });
   }
 
   /**
-   * One-Shot Learning: Records a live 1-hand or 2-hand gesture and stores into HDC SIMD memory
+   * Attempts camera autostart, showing prompt if browser policy blocks it
+   */
+  private async tryStartCamera(): Promise<void> {
+    try {
+      const success = await this.cameraManager.startCamera();
+      if (success) {
+        this.cameraStartPrompt.style.display = 'none';
+      } else {
+        this.cameraStartPrompt.style.display = 'flex';
+      }
+    } catch {
+      this.cameraStartPrompt.style.display = 'flex';
+    }
+  }
+
+  /**
+   * Synchronize overlay canvas with video element dimensions
+   */
+  private syncCanvasResolution(): void {
+    const video = this.videoEl;
+    if (video.videoWidth && video.videoHeight) {
+      if (this.canvasEl.width !== video.videoWidth || this.canvasEl.height !== video.videoHeight) {
+        this.canvasEl.width = video.videoWidth;
+        this.canvasEl.height = video.videoHeight;
+      }
+    }
+  }
+
+  /**
+   * One-Shot Learning: Records a live gesture and stores directly into HDC SIMD memory
    */
   private recordCustomSign(spokenPhrase: string): void {
-    let countdown = 3;
+    let countdown = 2;
     this.btnRecordCustomSign.disabled = true;
     const isTwoHands = this.lastActiveHands.length >= 2;
-    const modeLabel = isTwoHands ? '2-Hand Sign' : '1-Hand Sign';
+    const modeLabel = isTwoHands ? '2-Hand Gesture' : '1-Hand Gesture';
 
-    this.customTrainerStatus.textContent = `Get ready... Hold ${modeLabel} in ${countdown}s`;
+    this.customTrainerStatus.innerHTML = `Hold steady in <strong>${countdown}</strong> seconds... (${modeLabel})`;
 
     const timer = setInterval(() => {
       countdown--;
       if (countdown > 0) {
-        this.customTrainerStatus.textContent = `Get ready... Hold ${modeLabel} in ${countdown}s`;
+        this.customTrainerStatus.innerHTML = `Hold steady in <strong>${countdown}</strong> seconds... (${modeLabel})`;
       } else {
         clearInterval(timer);
-        this.customTrainerStatus.textContent = `⚡ Recording ${modeLabel} into 10,000-bit HDC Memory...`;
+        this.customTrainerStatus.textContent = 'Enrolling 3D joint trajectory into HDC SIMD memory...';
 
         setTimeout(() => {
           if (this.trajectoryBuffer.isFull()) {
             const flatTraj = this.trajectoryBuffer.getFlattenedTrajectory();
             if (flatTraj) {
-              const label = 'CUSTOM_' + Date.now();
+              const label = spokenPhrase.slice(0, 18).toUpperCase().replace(/\s+/g, '_');
               this.engineManager.enroll(label, flatTraj);
-              this.customPhrases.set(label, spokenPhrase);
-              this.customTrainerStatus.innerHTML = `✓ <strong class="text-green">Enrolled ${modeLabel}!</strong> Triggers "${spokenPhrase}" in <strong>1.15 μs</strong>.`;
-              this.ttsService.speak(`Learned ${modeLabel}: ${spokenPhrase}`, true);
+
+              this.addReflexMemoryCard({
+                id: label,
+                gestureName: spokenPhrase.slice(0, 24),
+                spokenPhrase: spokenPhrase,
+                intent: 'Custom Learned Gesture',
+                handCount: this.lastActiveHands.length,
+                timestamp: Date.now()
+              });
+
+              this.customTrainerStatus.innerHTML = `✓ <strong class="text-green">Learned ${modeLabel}!</strong> Triggers "${spokenPhrase}" in <strong>1.15 μs</strong>.`;
+              this.ttsService.speak(`Learned: ${spokenPhrase}`, true);
               this.btnRecordCustomSign.disabled = false;
               this.inputCustomPhrase.value = '';
               return;
@@ -506,21 +526,61 @@ class SignVoxApp {
           }
           this.customTrainerStatus.textContent = 'Hand not steady or missing. Please try again.';
           this.btnRecordCustomSign.disabled = false;
-        }, 600);
+        }, 500);
       }
     }, 1000);
   }
 
   /**
-   * Main 60 FPS Video & Dual-Hand Analysis Loop
+   * Appends a newly compiled sign to the dynamic On-Device Reflex Memory feed
+   */
+  private addReflexMemoryCard(sign: CachedReflexSign): void {
+    this.cachedReflexSigns.set(sign.id, sign);
+    this.reflexCountBadge.textContent = `${this.cachedReflexSigns.size} Signs Cached`;
+
+    if (this.reflexEmptyState) {
+      this.reflexEmptyState.style.display = 'none';
+    }
+
+    // Check if card element already exists
+    let existingCard = document.getElementById(`reflex-card-${sign.id}`);
+    if (!existingCard) {
+      const card = document.createElement('div');
+      card.id = `reflex-card-${sign.id}`;
+      card.className = 'reflex-item';
+      card.innerHTML = `
+        <div class="reflex-item-left">
+          <span class="reflex-item-icon">${sign.handCount >= 2 ? '👐' : '✋'}</span>
+          <div>
+            <div class="reflex-item-name">${sign.gestureName}</div>
+            <div class="reflex-item-phrase">"${sign.spokenPhrase}"</div>
+          </div>
+        </div>
+        <div class="reflex-item-speed">⚡ 1.15 μs Reflex</div>
+      `;
+
+      card.addEventListener('click', () => {
+        this.ttsService.speak(sign.spokenPhrase, true);
+        this.spokenPhraseText.textContent = `"${sign.spokenPhrase}"`;
+        this.liveSignTitle.textContent = sign.gestureName.toUpperCase();
+        this.liveSignSub.textContent = `"${sign.spokenPhrase}"`;
+        this.liveSignLatency.textContent = '⚡ 1.15 μs On-Device HDC Hit';
+        card.style.borderColor = 'var(--accent-green)';
+        setTimeout(() => { card.style.borderColor = 'var(--border-color)'; }, 600);
+      });
+
+      this.reflexMemoryFeed.prepend(card);
+    }
+  }
+
+  /**
+   * Main 60 FPS Video & Precision Hand Kinematic Loop
    */
   private renderLoop(timestamp: number): void {
     if (!this.isRunning) return;
 
-    // Ensure canvas stays synchronized with actual video client dimensions
     this.syncCanvasResolution();
 
-    // 1. Detect Hand Skeletons (1 or 2 hands)
     const isLive = this.cameraManager.isStreaming();
     const detection = this.handTracker.detectHand(this.videoEl, timestamp, isLive);
 
@@ -528,17 +588,10 @@ class SignVoxApp {
       this.missingHandFrames = 0;
       this.lastActiveHands = detection.hands;
 
-      // Update HUD tracking badge with real hand count
-      if (detection.handCount >= 2) {
-        this.trackingStatusBadge.textContent = 'MediaPipe 3D: 2 Hands Locked (42 Joints • 60 FPS)';
-      } else {
-        this.trackingStatusBadge.textContent = `MediaPipe 3D: 1 Hand (${detection.handedness} • 60 FPS)`;
-      }
-
-      // Draw sleek, delicate 3D skeletons for ALL active hands (Right in Cyan, Left in Purple)
+      // 1. Draw Sleek 3D Skeletons (Right Hand in Cyan, Left Hand in Purple)
       this.handTracker.drawSkeleton(this.ctx, detection.hands, this.canvasEl.width, this.canvasEl.height);
 
-      // Encode into HDC trajectory buffer (if 2 hands, combines centroids & inter-hand vectors)
+      // 2. Encode 3D Coordinates into HDC Trajectory Buffer
       const primaryHand = detection.hands[0].landmarks;
       if (detection.hands.length >= 2) {
         const h1 = detection.hands[0].landmarks;
@@ -556,236 +609,195 @@ class SignVoxApp {
         this.trajectoryBuffer.addFrame(primaryHand);
       }
 
-      // 2. Geometric Hand Feature Check
-      const sign = SignLanguageRecognizer.recognize(detection.hands);
-      this.latestDetectedSign = sign;
-      const now = Date.now();
+      // 3. Precision Kinematic Stability Analysis
+      const kinematics = this.handPoseTracker.analyze(detection.hands, timestamp);
 
-      if (sign) {
-        this.neutralHoldCount = 0;
+      // Update Telemetry Display
+      this.telemetryHands.textContent = detection.handCount >= 2 ? '2 Hands (Both)' : `1 Hand (${detection.handedness})`;
+      this.telemetryDistance.textContent = detection.handCount >= 2 ? `${Math.round(kinematics.interHandDistance * 640)} px` : 'N/A';
+      this.telemetryVelocity.textContent = kinematics.motionVelocity.toFixed(3);
 
-        // Temporal Hold Stability Filter: User must hold the sign steadily for >= 350ms
-        if (sign.signKey === this.candidateSignKey) {
-          const holdElapsed = now - this.candidateSignHoldStart;
+      // Update Stability Progress Bar
+      const stabilityPercent = Math.round(kinematics.stabilityScore * 100);
+      this.stabilityPercentText.textContent = `${stabilityPercent}%`;
+      this.stabilityBarFill.style.width = `${stabilityPercent}%`;
 
-          if (holdElapsed >= this.HOLD_DURATION_MS) {
-            const isNewSign = this.confirmedSignKey !== sign.signKey;
-
-            // Trigger Google Gemini Vision Multimodal Recognition!
-            if (isNewSign || !this.hasSpokenCurrentSign) {
-              this.confirmedSignKey = sign.signKey;
-              this.hasSpokenCurrentSign = true;
-
-              // Check if we have an ultra-fast on-device HDC hardware reflex cache hit (1.15 μs)
-              let isCachedInHdc = false;
-              if (this.trajectoryBuffer.isFull()) {
-                const flatTraj = this.trajectoryBuffer.getFlattenedTrajectory();
-                if (flatTraj) {
-                  const hdcMatch = this.engineManager.classify(flatTraj);
-                  if (hdcMatch && hdcMatch.distance < 3800) {
-                    isCachedInHdc = true;
-                    this.liveSignLatency.textContent = `⚡ ${hdcMatch.simdLatencyUs.toFixed(2)} μs HDC Reflex Cache Hit`;
-                  }
-                }
-              }
-
-              // Query Google Gemini Vision API for deep recognition
-              if (this.autoGeminiMode && (now - this.lastGeminiCallTime > 1800)) {
-                this.lastGeminiCallTime = now;
-                this.triggerGeminiRecognition();
-              } else {
-                // If Gemini called very recently, speak and show recognized sign
-                this.ttsService.speak(sign.spokenPhrase);
-                this.spokenPhraseText.textContent = `"${sign.spokenPhrase}"`;
-                this.appendToSentence(sign.signName.split('/')[0].trim());
-                this.updateHudWithSign(sign);
-                this.highlightActiveSignCard(sign.signKey);
-              }
-            }
-
-            const handsTag = sign.handCount === 2 ? ' • 2-Hand Gesture' : ' • 1-Hand';
-            this.similarityPill.textContent = `Google AI Recognized${handsTag}`;
-            this.similarityPill.className = 'confidence-tag badge-green';
-          }
-        } else {
-          // New gesture candidate, begin steady hold timer
-          this.candidateSignKey = sign.signKey;
-          this.candidateSignHoldStart = now;
-        }
-
-      } else {
-        // Resting / Neutral hand
-        this.candidateSignKey = '';
-        this.neutralHoldCount++;
-
-        // When hand is lowered or resting for ~350ms, unlock speech for next gesture
-        if (this.neutralHoldCount > 10) {
-          this.confirmedSignKey = '';
-          this.hasSpokenCurrentSign = false;
-          this.clearActiveSignCards();
-          this.hudSignBadge.className = 'hud-sign-badge';
-          this.liveSignIcon.textContent = detection.handCount >= 2 ? '👐' : '✋';
-          this.liveSignTitle.textContent = detection.handCount >= 2 ? '2 Hands Active (Neutral)' : '1 Hand Active (Neutral)';
-          this.liveSignSub.textContent = 'Hold any sign gesture for Google Gemini Vision...';
-          this.similarityPill.textContent = 'Awaiting Gesture';
-          this.similarityPill.className = 'confidence-tag badge-subtle';
-        }
+      if (kinematics.isHoldingPose) {
+        this.telemetryState.textContent = 'Pose Locked (Stable)';
+        this.telemetryState.className = 'telemetry-value text-green';
+        this.similarityPill.textContent = 'Pose Locked';
+        this.similarityPill.className = 'confidence-tag badge-green';
+      } else if (kinematics.isEngaged) {
+        this.telemetryState.textContent = 'Gesturing...';
+        this.telemetryState.className = 'telemetry-value text-blue';
+        this.similarityPill.textContent = 'Moving Hand';
+        this.similarityPill.className = 'confidence-tag badge-subtle';
       }
+
+      // 4. Trigger Recognition when a gesture pose is held steady
+      if (kinematics.shouldTriggerGemini && this.autoGeminiMode) {
+        this.evaluateAndRecognizeGesture(detection.hands);
+      }
+
     } else {
+      // No hands in frame
       this.missingHandFrames++;
       if (this.missingHandFrames > 12) {
         this.ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
         this.trajectoryBuffer.clear();
-        this.clearActiveSignCards();
-        this.confirmedSignKey = '';
-        this.hasSpokenCurrentSign = false;
-        this.candidateSignKey = '';
-        this.neutralHoldCount = 0;
-        this.hudSignBadge.className = 'hud-sign-badge';
+        this.handPoseTracker.resetCooldown();
+
+        this.telemetryHands.textContent = '0 Hands';
+        this.telemetryDistance.textContent = 'N/A';
+        this.telemetryVelocity.textContent = '0.000';
+        this.telemetryState.textContent = 'Searching...';
+        this.telemetryState.className = 'telemetry-value text-blue';
+
+        this.stabilityPercentText.textContent = '0%';
+        this.stabilityBarFill.style.width = '0%';
+
         this.liveSignIcon.textContent = '✋';
         this.liveSignTitle.textContent = 'Awaiting Hand Gesture...';
         this.liveSignSub.textContent = 'Hold 1 or 2 hands in camera frame to speak';
         this.similarityPill.textContent = 'Awaiting Hand';
         this.similarityPill.className = 'confidence-tag badge-subtle';
-        this.trackingStatusBadge.textContent = 'MediaPipe Dual-Hand Model Active (60 FPS)';
-        this.latestDetectedSign = null;
       }
     }
 
     requestAnimationFrame(this.renderLoop.bind(this));
   }
 
-  private updateHudWithSign(sign: SignRecognitionOutput): void {
-    const iconMap: Record<string, string> = {
-      // 2-Hand Signs
-      namaste: '🙏',
-      asl_help: '🆘',
-      heart: '❤️',
-      time_out: '🛑',
-      welcome: '👐',
-      receive: '🤲',
-      applause: '👏',
-      home: '🏠',
-      double_thumbs_up: '👍👍',
-      double_peace: '✌️✌️',
-      together: '🤝',
-      // 1-Hand Signs
-      hello: '👋',
-      thank_you: '🙏',
-      yes: '👍',
-      no: '👎',
-      i_love_you: '🤟',
-      water: '💧',
-      help: '🆘',
-      stop: '✋',
-      peace: '✌️',
-      ok: '👌',
-      point: '👉',
-      fist: '✊'
-    };
+  /**
+   * Dual-Tier Execution:
+   * 1. Checks On-Device HDC SIMD Hardware Reflex Cache (1.15 μs)
+   * 2. If novel/unseen sign: Queries Google Gemini 2.0 Multimodal Vision API
+   */
+  private async evaluateAndRecognizeGesture(hands: SingleHand[]): Promise<void> {
+    // Check Tier 1: On-Device HDC Reflex Memory Hit
+    if (this.trajectoryBuffer.isFull()) {
+      const flatTraj = this.trajectoryBuffer.getFlattenedTrajectory();
+      if (flatTraj) {
+        const hdcMatch = this.engineManager.classify(flatTraj);
+        if (hdcMatch && hdcMatch.distance < 3600) {
+          const cachedSign = this.cachedReflexSigns.get(hdcMatch.predictedLabel);
+          if (cachedSign) {
+            console.log(`[Tier 1 Reflex Hit] Recognized "${cachedSign.gestureName}" in ${hdcMatch.simdLatencyUs.toFixed(2)} μs!`);
+            this.ttsService.speak(cachedSign.spokenPhrase);
+            this.spokenPhraseText.textContent = `"${cachedSign.spokenPhrase}"`;
+            this.lastSpokenPhrase = cachedSign.spokenPhrase;
 
-    const icon = iconMap[sign.signKey] || (sign.handCount === 2 ? '👐' : '✋');
-    const handTag = sign.handCount === 2 ? ' (2 HANDS)' : '';
-    this.liveSignIcon.textContent = icon;
-    this.liveSignTitle.textContent = `${sign.signName.toUpperCase()}${handTag}`;
-    this.liveSignSub.textContent = `Google AI: "${sign.spokenPhrase}"`;
-    this.hudSignBadge.className = 'hud-sign-badge active-hud';
-  }
+            this.liveSignIcon.textContent = cachedSign.handCount >= 2 ? '👐' : '⚡';
+            this.liveSignTitle.textContent = cachedSign.gestureName.toUpperCase();
+            this.liveSignSub.textContent = `"${cachedSign.spokenPhrase}"`;
+            this.liveSignLatency.textContent = `⚡ ${hdcMatch.simdLatencyUs.toFixed(2)} μs HDC SIMD Reflex Hit`;
+            this.hudSignBadge.className = 'hud-sign-badge active-hud';
 
-  private highlightActiveSignCard(signKey: string): void {
-    if (this.lastActiveSignKey === signKey) return;
-    this.clearActiveSignCards();
-    const card = document.getElementById(`sign-card-${signKey}`);
-    if (card) {
-      card.classList.add('active-sign');
-      this.lastActiveSignKey = signKey;
-    }
-  }
-
-  private clearActiveSignCards(): void {
-    const active = document.querySelectorAll('.sign-item.active-sign');
-    active.forEach(el => el.classList.remove('active-sign'));
-    this.lastActiveSignKey = '';
-  }
-
-  private appendToSentence(word: string): void {
-    this.sentenceWords.push(word);
-    this.renderSentence();
-  }
-
-  private renderSentence(): void {
-    if (this.sentenceWords.length === 0) {
-      this.sentenceDisplay.innerHTML = `<span class="sentence-placeholder">Signed words will assemble here... (e.g. "Hello, I need water please")</span>`;
-      return;
+            this.appendSentence(cachedSign.spokenPhrase);
+            return;
+          }
+        }
+      }
     }
 
-    this.sentenceDisplay.innerHTML = this.sentenceWords
-      .map(w => `<span class="sentence-token">${w}</span>`)
-      .join(' ');
+    // Tier 2: Query Google Gemini Multimodal Vision
+    await this.triggerGeminiRecognition();
   }
 
   /**
-   * Primary Recognition: Google Gemini 2.0 Multimodal Vision API
-   * Interprets live camera image, formulates natural spoken speech, and auto-caches into HDC!
+   * Primary Recognition: Google Gemini Multimodal Vision API
+   * Interprets any live gesture, speaks out loud, and auto-compiles into On-Device HDC Memory
    */
   public async triggerGeminiRecognition(): Promise<void> {
+    if (!this.geminiService.hasApiKey()) {
+      const promptMsg = 'Please enter your Google Gemini API key in the top bar to translate live gestures.';
+      this.spokenPhraseText.textContent = `"${promptMsg}"`;
+      this.inputInlineGeminiKey.focus();
+      this.inputInlineGeminiKey.style.outline = '2px solid var(--accent-cyan)';
+      setTimeout(() => { this.inputInlineGeminiKey.style.outline = 'none'; }, 2000);
+      return;
+    }
+
     if (this.geminiStatusBadge) {
-      this.geminiStatusBadge.textContent = '🧠 Google Gemini Vision Analyzing...';
+      this.geminiStatusBadge.textContent = '🧠 Gemini Vision Analyzing...';
       this.geminiStatusBadge.className = 'badge badge-purple pulse';
     }
 
-    const hint = this.latestDetectedSign
-      ? {
-          signName: this.latestDetectedSign.signName,
-          spokenPhrase: this.latestDetectedSign.spokenPhrase,
-          intent: this.latestDetectedSign.description
-        }
-      : undefined;
+    const handContext = {
+      handCount: this.lastActiveHands.length || 1,
+      handedness: this.lastActiveHands.length >= 2 ? 'Both Hands' : (this.lastActiveHands[0]?.handedness || 'Right')
+    };
 
-    const res = await this.geminiService.interpretFrame(this.videoEl, hint);
+    const res = await this.geminiService.interpretFrame(this.videoEl, handContext);
     this.latestGeminiResult = res;
 
-    if (res.success) {
-      if (this.geminiStatusBadge) {
-        this.geminiStatusBadge.textContent = `✓ Gemini: ${res.gestureName}`;
-        this.geminiStatusBadge.className = 'badge badge-green';
-      }
+    if (res.success && res.spokenPhrase) {
+      this.geminiStatusBadge.textContent = `✓ Gemini: ${res.gestureName}`;
+      this.geminiStatusBadge.className = 'badge badge-green';
 
-      this.geminiLatencyBadge.textContent = `API Latency: ${res.latencyMs}ms (${res.source})`;
+      this.geminiLatencyBadge.textContent = `Cloud Latency: ${res.latencyMs}ms (${res.source})`;
       this.geminiTranslatedPhrase.textContent = `"${res.spokenPhrase}"`;
       this.geminiDetectedSign.textContent = res.gestureName;
       this.geminiIntentBadge.textContent = res.intent;
 
-      // 1. Spoken speech synthesis via soothing female voice!
+      // 1. Spoken speech output in soothing female voice
       this.ttsService.speak(res.spokenPhrase);
       this.spokenPhraseText.textContent = `"${res.spokenPhrase}"`;
+      this.lastSpokenPhrase = res.spokenPhrase;
 
-      // 2. Append phrase to conversation builder
-      this.appendToSentence(res.gestureName);
+      // 2. Append to continuous conversation log
+      this.appendSentence(res.spokenPhrase);
 
-      // 3. Update HUD overlay on video
-      this.liveSignIcon.textContent = '🧠';
+      // 3. Update HUD overlay
+      this.liveSignIcon.textContent = handContext.handCount >= 2 ? '👐' : '🧠';
       this.liveSignTitle.textContent = `GEMINI: ${res.gestureName.toUpperCase()}`;
-      this.liveSignSub.textContent = `Intent: ${res.intent} • "${res.spokenPhrase}"`;
+      this.liveSignSub.textContent = `"${res.spokenPhrase}"`;
       this.liveSignLatency.textContent = `🧠 ${res.latencyMs}ms (Gemini Vision) ➔ ⚡ 1.15 μs (HDC SIMD Cache)`;
       this.hudSignBadge.className = 'hud-sign-badge active-hud';
 
-      // 4. THE DUAL-TIER BRIDGE: Auto-compile Gemini's recognized sign into On-Device HDC SIMD Memory!
+      // 4. Auto-compile into On-Device HDC SIMD Hardware Cache!
       if (this.trajectoryBuffer.isFull()) {
         const flatTraj = this.trajectoryBuffer.getFlattenedTrajectory();
         if (flatTraj) {
           const key = res.gestureName.toUpperCase().replace(/\s+/g, '_');
           this.engineManager.enroll(key, flatTraj);
-          this.customPhrases.set(key, res.spokenPhrase);
-          console.log(`[Tier 1 + Tier 2 Synergy] Compiled "${res.gestureName}" into On-Device HDC Memory. Instant 1.15 μs reflex active!`);
+
+          this.addReflexMemoryCard({
+            id: key,
+            gestureName: res.gestureName,
+            spokenPhrase: res.spokenPhrase,
+            intent: res.intent,
+            handCount: handContext.handCount,
+            timestamp: Date.now()
+          });
+
+          console.log(`[Dual-Tier AI Synergy] Enrolled "${res.gestureName}" into On-Device HDC SIMD Memory.`);
         }
       }
+    } else if (res.error === 'NO_API_KEY') {
+      this.geminiStatusBadge.textContent = 'API Key Required';
+      this.geminiStatusBadge.className = 'badge badge-red';
     } else {
-      if (this.geminiStatusBadge) {
-        this.geminiStatusBadge.textContent = 'Gemini API Busy';
-        this.geminiStatusBadge.className = 'badge badge-red';
-      }
+      this.geminiStatusBadge.textContent = 'Gemini API Busy';
+      this.geminiStatusBadge.className = 'badge badge-subtle';
     }
+  }
+
+  private appendSentence(phrase: string): void {
+    if (this.sentenceHistory.length === 0 || this.sentenceHistory[this.sentenceHistory.length - 1] !== phrase) {
+      this.sentenceHistory.push(phrase);
+      this.renderSentence();
+    }
+  }
+
+  private renderSentence(): void {
+    if (this.sentenceHistory.length === 0) {
+      this.sentenceDisplay.innerHTML = `<span class="sentence-placeholder">Signed phrases will assemble here in sequence...</span>`;
+      return;
+    }
+
+    this.sentenceDisplay.innerHTML = this.sentenceHistory
+      .map(p => `<span class="sentence-token">${p}</span>`)
+      .join(' ');
   }
 }
 

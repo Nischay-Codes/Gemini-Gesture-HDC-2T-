@@ -1,9 +1,9 @@
 /**
  * Google Gemini 2.0 Flash Multimodal Vision Service
  * 
- * Primary Recognition Engine:
- * - Analyzes video frames of live hand signs and gestures using Google Gemini Multimodal AI
- * - Formulates concise, natural, empathetic spoken sentences for non-verbal communicators
+ * Direct Real-Time Assistive Communication Engine:
+ * - Analyzes video frames of live hand signs and complex 2-handed gestures using Google Gemini
+ * - Formulates fluent, natural, empathetic first-person speech for non-verbal communicators
  * - Structured JSON output used to continuously seed the on-device HDC 10,000-bit SIMD memory
  */
 
@@ -14,19 +14,54 @@ export interface GeminiInterpretation {
   intent: string;
   confidence: number;
   latencyMs: number;
-  source: 'gemini-2.0-flash' | 'gemini-1.5-flash' | 'intelligent-vision-simulator';
+  source: 'gemini-2.0-flash' | 'gemini-1.5-flash' | 'none';
   error?: string;
 }
 
 export class GeminiService {
   private apiKey: string = '';
-  private model: string = 'gemini-2.0-flash';
+  private activeModel: string = 'gemini-2.0-flash';
   private isProcessing: boolean = false;
   private lastInterpretation: GeminiInterpretation | null = null;
   private onStatusChange: ((status: string, isBusy: boolean) => void) | null = null;
 
   constructor() {
-    this.apiKey = localStorage.getItem('GEMINI_API_KEY') || '';
+    this.initKey();
+  }
+
+  private async initKey(): Promise<void> {
+    // 1. Check URL parameters (?apiKey=... or ?key=...)
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlKey = urlParams.get('apiKey') || urlParams.get('key');
+      if (urlKey && urlKey.trim().length > 10) {
+        this.setApiKey(urlKey.trim());
+        return;
+      }
+    } catch {
+      // Ignore URL parsing errors
+    }
+
+    // 2. Check localStorage
+    const local = localStorage.getItem('GEMINI_API_KEY');
+    if (local && local.trim().length > 10) {
+      this.apiKey = local.trim();
+      return;
+    }
+
+    // 3. Check server .env / config
+    try {
+      const res = await fetch('/api/key');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.apiKey && data.apiKey.trim().length > 10) {
+          this.apiKey = data.apiKey.trim();
+          localStorage.setItem('GEMINI_API_KEY', this.apiKey);
+        }
+      }
+    } catch {
+      // Server fetch optional
+    }
   }
 
   public setOnStatusChange(cb: (status: string, isBusy: boolean) => void): void {
@@ -35,7 +70,17 @@ export class GeminiService {
 
   public setApiKey(key: string): void {
     this.apiKey = (key || '').trim();
-    localStorage.setItem('GEMINI_API_KEY', this.apiKey);
+    if (this.apiKey) {
+      localStorage.setItem('GEMINI_API_KEY', this.apiKey);
+      // Persist to server if available
+      fetch('/api/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: this.apiKey })
+      }).catch(() => {});
+    } else {
+      localStorage.removeItem('GEMINI_API_KEY');
+    }
   }
 
   public getApiKey(): string {
@@ -47,9 +92,69 @@ export class GeminiService {
   }
 
   /**
+   * Test API Key connection directly with Google Generative AI
+   */
+  public async testConnection(keyToTest?: string): Promise<{ success: boolean; model: string; message: string; latencyMs: number }> {
+    const key = (keyToTest || this.apiKey).trim();
+    if (!key) {
+      return { success: false, model: '', message: 'API key is empty', latencyMs: 0 };
+    }
+
+    const t0 = performance.now();
+    let modelToUse = 'gemini-2.0-flash';
+
+    try {
+      let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${key}`;
+      let res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Respond with the single word: READY' }] }],
+          generationConfig: { maxOutputTokens: 5 }
+        })
+      });
+
+      if (!res.ok && res.status === 404) {
+        // Fallback to gemini-1.5-flash
+        modelToUse = 'gemini-1.5-flash';
+        endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${key}`;
+        res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'Respond with the single word: READY' }] }],
+            generationConfig: { maxOutputTokens: 5 }
+          })
+        });
+      }
+
+      const latencyMs = Math.round(performance.now() - t0);
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        const errMsg = errJson.error?.message || `HTTP ${res.status}`;
+        return { success: false, model: modelToUse, message: errMsg, latencyMs };
+      }
+
+      this.apiKey = key;
+      this.activeModel = modelToUse;
+      localStorage.setItem('GEMINI_API_KEY', key);
+
+      return {
+        success: true,
+        model: modelToUse,
+        message: `Successfully connected to ${modelToUse} (${latencyMs}ms)`,
+        latencyMs
+      };
+    } catch (err: any) {
+      return { success: false, model: modelToUse, message: err.message || 'Network error', latencyMs: 0 };
+    }
+  }
+
+  /**
    * Captures a base64 JPEG frame from a video or canvas element
    */
-  public captureFrameBase64(source: HTMLVideoElement | HTMLCanvasElement, quality = 0.8): string {
+  public captureFrameBase64(source: HTMLVideoElement | HTMLCanvasElement, quality = 0.85): string {
     let canvas: HTMLCanvasElement;
     if (source instanceof HTMLCanvasElement) {
       canvas = source;
@@ -65,51 +170,62 @@ export class GeminiService {
   }
 
   /**
-   * Send live camera frame to Google Gemini Multimodal Vision API
+   * Send live camera frame directly to Google Gemini Multimodal Vision API
+   * Interprets any sign language gesture (1 or 2 hands) without hardcoded dictionary!
    */
   public async interpretFrame(
     source: HTMLVideoElement | HTMLCanvasElement,
-    detectedSignHint?: { signName: string; spokenPhrase: string; intent?: string }
+    handContext?: { handCount: number; handedness?: string }
   ): Promise<GeminiInterpretation> {
     if (this.isProcessing) {
       return {
         success: false,
         gestureName: 'Processing',
-        spokenPhrase: 'Gemini is currently analyzing...',
+        spokenPhrase: '',
         intent: 'Busy',
         confidence: 0,
         latencyMs: 0,
-        source: 'gemini-2.0-flash',
+        source: this.activeModel as any,
         error: 'Concurrent call blocked'
       };
     }
 
     if (!this.hasApiKey()) {
-      if (this.onStatusChange) this.onStatusChange('Smart Vision Simulator (Paste API Key for Cloud Gemini)', false);
-      return this.fallbackSimulate(detectedSignHint);
+      if (this.onStatusChange) this.onStatusChange('API Key Required (Paste Gemini Key in Header)', false);
+      return {
+        success: false,
+        gestureName: 'No API Key',
+        spokenPhrase: 'Please set your Google Gemini API key to translate gestures.',
+        intent: 'Configuration Required',
+        confidence: 0,
+        latencyMs: 0,
+        source: 'none',
+        error: 'NO_API_KEY'
+      };
     }
 
     this.isProcessing = true;
-    if (this.onStatusChange) this.onStatusChange('Google Gemini 2.0 Analyzing Video Feed...', true);
+    if (this.onStatusChange) this.onStatusChange(`Google Gemini Analyzing Gesture (${handContext?.handCount || 1} Hands)...`, true);
     const t0 = performance.now();
 
     try {
       const base64Data = this.captureFrameBase64(source);
 
-      const prompt = `You are the core AI vision interpreter for an assistive sign language and speech communicator device.
-The user in this camera frame is non-verbal or speech-impaired and is communicating using sign language or hand gestures (one or two hands).
+      const prompt = `You are the core assistive communication voice for a non-verbal person communicating through sign language and hand gestures in front of the camera.
+You are seeing their live camera view.
+Active hands detected: ${handContext?.handCount || 1} (${handContext?.handedness || 'in view'}).
 
-Your tasks:
-1. Examine the user's hand posture, finger positions, hand orientation, and body language.
-2. Identify the sign language gesture (ASL, ISL, universal non-verbal gesture, or natural gesture).
-3. Determine what the person wants to say out loud right now.
-4. Formulate the EXACT concise, natural, polite spoken sentence or phrase (under 12 words) to be spoken on their speaker.
+Your instructions:
+1. Examine the user's hand shape, finger extensions, palm orientations, and relative positions of BOTH hands (if 2 hands are used).
+2. Recognize what sign language (ASL, ISL, BSL), universal non-verbal gesture, or expressive physical action they are showing.
+3. Understand what the person is actively communicating.
+4. Formulate the EXACT first-person natural, concise, polite spoken sentence (under 12 words) to be voiced aloud on their speaker (e.g. "I need a glass of water please", "Thank you very much", "Where is the bathroom?", "I am happy to meet you", "Please help me with this", "Yes, I agree", "I love you", "Stop please").
 
-Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no extra text):
+Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no comments):
 {
-  "gesture_name": "Short name (e.g. Hello, Thumbs Up, Sign for Water, ASL Help, Namaste, I Love You, Heart)",
-  "spoken_phrase": "The exact spoken sentence (e.g. 'Hello everyone, pleased to meet you.')",
-  "intent": "Brief communicative intent (e.g. Greeting, Requesting assistance, Agreement)",
+  "gesture_name": "Short descriptive gesture name (e.g. Asking for Water, ASL Help, Namaste, Thank You, Pointing to Exit, Heart, Fist)",
+  "spoken_phrase": "First-person natural sentence to be spoken out loud (e.g. 'I need some water please.')",
+  "intent": "Communicative intent (e.g. Basic Need, Greeting, Assistance, Gratitude, Emotion, Directive)",
   "confidence": 0.95
 }`;
 
@@ -128,14 +244,13 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no extr
           }
         ],
         generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 256,
+          temperature: 0.15,
+          maxOutputTokens: 200,
           responseMimeType: 'application/json'
         }
       };
 
-      // Try gemini-2.0-flash first, fallback to gemini-1.5-flash if needed
-      let modelInUse = 'gemini-2.0-flash';
+      let modelInUse = this.activeModel || 'gemini-2.0-flash';
       let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelInUse}:generateContent?key=${this.apiKey}`;
 
       let response = await fetch(endpoint, {
@@ -144,8 +259,9 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no extr
         body: JSON.stringify(requestBody)
       });
 
-      if (!response.ok && response.status === 404) {
+      if (!response.ok && response.status === 404 && modelInUse === 'gemini-2.0-flash') {
         modelInUse = 'gemini-1.5-flash';
+        this.activeModel = modelInUse;
         endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelInUse}:generateContent?key=${this.apiKey}`;
         response = await fetch(endpoint, {
           method: 'POST',
@@ -164,13 +280,13 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no extr
 
       let parsed: any;
       try {
-        parsed = JSON.parse(rawText.replace(/```json/g, '').replace(/```/g, '').trim());
+        parsed = JSON.parse(rawText.replace(/```json/gi, '').replace(/```/g, '').trim());
       } catch {
         parsed = {
-          gesture_name: "Sign Identified",
-          spoken_phrase: rawText.slice(0, 80),
-          intent: "General Communication",
-          confidence: 0.88
+          gesture_name: "Gesture Recognized",
+          spoken_phrase: rawText.slice(0, 80).trim(),
+          intent: "Communication",
+          confidence: 0.85
         };
       }
 
@@ -186,78 +302,25 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no extr
       };
 
       this.lastInterpretation = result;
-      if (this.onStatusChange) this.onStatusChange(`Google Gemini 2.0 Active (${result.latencyMs}ms)`, false);
+      if (this.onStatusChange) this.onStatusChange(`Gemini Decoded: "${result.spokenPhrase}" (${result.latencyMs}ms)`, false);
       return result;
+
     } catch (err: any) {
-      console.warn('Gemini API call failed, using intelligent visual fallback:', err);
-      if (this.onStatusChange) this.onStatusChange(`Gemini API Error: ${err.message}`, false);
-      return this.fallbackSimulate(detectedSignHint, err.message);
+      console.warn('Gemini API call failed:', err);
+      const errMsg = err.message || 'Gemini error';
+      if (this.onStatusChange) this.onStatusChange(`Gemini Error: ${errMsg}`, false);
+      return {
+        success: false,
+        gestureName: 'Recognition Error',
+        spokenPhrase: '',
+        intent: 'Error',
+        confidence: 0,
+        latencyMs: Math.round(performance.now() - t0),
+        source: this.activeModel as any,
+        error: errMsg
+      };
     } finally {
       this.isProcessing = false;
     }
-  }
-
-  /**
-   * Intelligent visual heuristic when API key is missing or internet is down
-   */
-  private fallbackSimulate(
-    detectedSignHint?: { signName: string; spokenPhrase: string; intent?: string },
-    errorMsg?: string
-  ): GeminiInterpretation {
-    if (detectedSignHint && detectedSignHint.signName) {
-      const result: GeminiInterpretation = {
-        success: true,
-        gestureName: detectedSignHint.signName,
-        spokenPhrase: detectedSignHint.spokenPhrase,
-        intent: detectedSignHint.intent || "Direct Sign Communication",
-        confidence: 0.96,
-        latencyMs: 140,
-        source: 'intelligent-vision-simulator',
-        error: errorMsg
-      };
-      this.lastInterpretation = result;
-      return result;
-    }
-
-    const library = [
-      {
-        gestureName: "Open Palm Greeting",
-        spokenPhrase: "Hello everyone, pleased to meet you.",
-        intent: "Friendly Greeting",
-        confidence: 0.96
-      },
-      {
-        gestureName: "Water / Hydration Sign",
-        spokenPhrase: "Could I please have a glass of water?",
-        intent: "Basic Need Request",
-        confidence: 0.94
-      },
-      {
-        gestureName: "Gratitude / Thank You",
-        spokenPhrase: "Thank you so much for your help.",
-        intent: "Expressing Gratitude",
-        confidence: 0.95
-      },
-      {
-        gestureName: "Agreement / Approval",
-        spokenPhrase: "Yes, I agree with that completely.",
-        intent: "Affirmation",
-        confidence: 0.97
-      }
-    ];
-
-    const pick = library[Math.floor(Math.random() * library.length)];
-    const result: GeminiInterpretation = {
-      success: true,
-      gestureName: pick.gestureName,
-      spokenPhrase: pick.spokenPhrase,
-      intent: pick.intent,
-      confidence: pick.confidence,
-      latencyMs: 120,
-      source: 'intelligent-vision-simulator',
-      error: errorMsg
-    };
-    this.lastInterpretation = result;
-    return result;
   }
 }

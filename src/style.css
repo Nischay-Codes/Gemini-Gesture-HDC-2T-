@@ -904,3 +904,257 @@ body {
   justify-content: flex-end;
   gap: 0.65rem;
 }
+
+/* =========================================
+   Inline API Key Bar in Header
+   ========================================= */
+.nav-center-key {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  max-width: 520px;
+  margin: 0 1.25rem;
+}
+
+.api-key-inline-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.35rem 0.65rem;
+  width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.api-key-inline-bar:focus-within {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+}
+
+.key-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  white-space: nowrap;
+}
+
+.key-text-input {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  flex: 1;
+  outline: none;
+  min-width: 120px;
+}
+
+.key-text-input::placeholder {
+  color: var(--text-muted);
+}
+
+.key-status-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.badge-red {
+  background: rgba(244, 63, 94, 0.15);
+  color: var(--accent-red);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.badge-green {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-green);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+/* =========================================
+   Stability Progress Bar in HUD
+   ========================================= */
+.hud-stability-bar-wrap {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 0.75rem;
+  right: 0.75rem;
+  background: rgba(13, 15, 23, 0.88);
+  backdrop-filter: blur(10px);
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  z-index: 20;
+}
+
+.hud-stability-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.3rem;
+}
+
+.hud-stability-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hud-stability-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #10b981);
+  border-radius: 3px;
+  transition: width 0.08s ease-out;
+}
+
+.camera-action-bar {
+  padding: 0.75rem 1rem;
+  background: rgba(18, 21, 32, 0.95);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* =========================================
+   Hand Kinematic Telemetry
+   ========================================= */
+.telemetry-card {
+  margin-top: 1rem;
+}
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+.telemetry-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.telemetry-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.telemetry-value {
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* =========================================
+   Dynamic Reflex Memory Feed
+   ========================================= */
+.reflex-memory-card {
+  margin-top: 1rem;
+}
+
+.reflex-memory-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.reflex-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.5rem 1rem;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  border: 1px dashed var(--border-color);
+}
+
+.reflex-empty-state .empty-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.reflex-empty-state p {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
+.reflex-empty-state .empty-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  max-width: 440px;
+  margin-top: 0.35rem;
+  line-height: 1.4;
+}
+
+.reflex-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0.9rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.reflex-item:hover {
+  background: rgba(56, 189, 248, 0.08);
+  border-color: var(--accent-cyan);
+  transform: translateX(2px);
+}
+
+.reflex-item-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.reflex-item-icon {
+  font-size: 1.3rem;
+}
+
+.reflex-item-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.reflex-item-phrase {
+  font-size: 0.75rem;
+  color: var(--accent-cyan);
+  margin-top: 0.15rem;
+}
+
+.reflex-item-speed {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--accent-green);
+  background: rgba(16, 185, 129, 0.12);
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  white-space: nowrap;
+}

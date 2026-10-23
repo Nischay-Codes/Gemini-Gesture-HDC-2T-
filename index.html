@@ -24,7 +24,28 @@
           </div>
           <div>
             <h1>SignVox <span class="tag-version">HDC-2T</span></h1>
-            <p class="tagline">Dual-Tier AI Sign Language & Voice Communicator for Non-Verbal Speech</p>
+            <p class="tagline">Dual-Tier AI Sign Language & Voice Synthesizer for Non-Verbal Speech</p>
+          </div>
+        </div>
+
+        <!-- Prominent Inline API Key Bar -->
+        <div class="nav-center-key">
+          <div class="api-key-inline-bar">
+            <span class="key-label">🔑 Gemini API:</span>
+            <input 
+              type="text" 
+              id="input-inline-gemini-key" 
+              class="key-text-input" 
+              placeholder="Paste Google Gemini API Key (AIzaSy...)" 
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <button class="btn btn-xs btn-primary" id="btn-save-inline-key">
+              Connect
+            </button>
+            <span class="key-status-pill badge-red" id="header-key-status">
+              🔴 Key Not Set
+            </span>
           </div>
         </div>
 
@@ -32,37 +53,27 @@
           <!-- Hardware Tier 1 Pill -->
           <div class="status-pill status-pill-simd" id="simd-status-pill">
             <span class="dot dot-green"></span>
-            <span>Tier 1: HDC SIMD <strong>1.15 μs Reflex</strong></span>
-          </div>
-          <!-- Multimodal Tier 2 Pill -->
-          <div class="status-pill status-pill-gemini" id="gemini-status-pill">
-            <span class="dot dot-blue"></span>
-            <span id="gemini-header-status-text">Google Gemini 2.0 Vision</span>
+            <span>HDC SIMD <strong>1.15 μs Reflex</strong></span>
           </div>
           <!-- Voice Output Toggle -->
           <button class="btn btn-sm btn-ghost" id="btn-toggle-voice">
             <span class="voice-icon">🔊</span>
             <span id="voice-status-text">Voice: ON</span>
           </button>
-          <!-- API Key Settings Button -->
-          <button class="btn btn-sm btn-primary" id="btn-api-key-modal" style="font-weight: 700;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path></svg>
-            <span id="btn-api-key-text">🔑 Set Gemini API Key</span>
-          </button>
         </div>
       </header>
 
       <!-- Main Workspace -->
       <main class="main-container">
-        <!-- Left Column: Vision & Sign Recognition -->
+        <!-- Left Column: Vision & Precision Hand Perception -->
         <section class="viewport-column">
           <!-- Camera Viewport Card -->
           <div class="card camera-card">
             <div class="card-header">
               <div class="header-title-group">
                 <span class="status-indicator live-indicator"></span>
-                <h3>Live Sign Camera</h3>
-                <span class="badge badge-subtle" id="tracking-status-badge">MediaPipe 3D Skeleton (60 FPS)</span>
+                <h3>Live Gesture Camera</h3>
+                <span class="badge badge-subtle" id="tracking-status-badge">MediaPipe 3D Kinematics (60 FPS)</span>
               </div>
               <div class="camera-controls">
                 <button class="btn btn-xs btn-secondary" id="btn-mirror-cam" title="Mirror Camera Feed">
@@ -92,129 +103,86 @@
                   <span class="hud-icon" id="live-sign-icon">✋</span>
                   <div class="hud-details">
                     <span class="hud-label" id="live-sign-title">Awaiting Hand Gesture...</span>
-                    <span class="hud-sub" id="live-sign-sub">Hold your hand in camera frame to speak</span>
+                    <span class="hud-sub" id="live-sign-sub">Hold 1 or 2 hands in camera frame to speak</span>
                   </div>
                 </div>
+                
                 <div class="hud-latency-pill" id="live-sign-latency">
                   ⚡ 1.15 μs On-Device
                 </div>
               </div>
+
+              <!-- Stability Progress Bar -->
+              <div class="hud-stability-bar-wrap">
+                <div class="hud-stability-label">
+                  <span>Gesture Hold Stability</span>
+                  <span id="stability-percent-text">0%</span>
+                </div>
+                <div class="hud-stability-track">
+                  <div class="hud-stability-fill" id="stability-bar-fill" style="width: 0%;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Instant Action Bar below Camera -->
+            <div class="camera-action-bar">
+              <button class="btn btn-md btn-gemini-pulse" id="btn-gemini-translate" style="flex: 1;">
+                ✨ Translate Current Gesture (Spacebar)
+              </button>
             </div>
           </div>
 
-          <!-- Quick ASL & Everyday Sign Matrix -->
-          <div class="card sign-matrix-card">
+          <!-- Hand Perception & Kinematic Telemetry Card -->
+          <div class="card telemetry-card">
             <div class="card-header">
               <div>
-                <h4>Everyday Sign Language Matrix</h4>
-                <p class="section-desc">Active hand signs illuminate in real time and speak aloud</p>
+                <h4>Precision Hand Telemetry (Our Architecture)</h4>
+                <p class="section-desc">MediaPipe 3D joint tracking & neuromorphic trajectory encoding</p>
               </div>
-              <span class="badge badge-accent">10,000-Bit Holographic Memory</span>
+              <span class="badge badge-accent">42 Joints • 60 FPS</span>
             </div>
 
-            <div class="sign-grid">
-              <!-- Single-Hand Signs -->
-              <div class="sign-item" id="sign-card-hello">
-                <div class="sign-icon">👋</div>
-                <div class="sign-info">
-                  <div class="sign-name">Hello / Greet <span class="tag-hands">1 Hand</span></div>
-                  <div class="sign-hint">Open palm fingers spread</div>
-                </div>
+            <div class="telemetry-grid">
+              <div class="telemetry-item">
+                <span class="telemetry-label">Active Hands</span>
+                <span class="telemetry-value" id="telemetry-hands">0 Hands</span>
               </div>
-
-              <div class="sign-item" id="sign-card-yes">
-                <div class="sign-icon">👍</div>
-                <div class="sign-info">
-                  <div class="sign-name">Yes / Agree <span class="tag-hands">1 Hand</span></div>
-                  <div class="sign-hint">Thumb pointing upright</div>
-                </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">Inter-Palm Distance</span>
+                <span class="telemetry-value" id="telemetry-distance">N/A</span>
               </div>
-
-              <div class="sign-item" id="sign-card-no">
-                <div class="sign-icon">👎</div>
-                <div class="sign-info">
-                  <div class="sign-name">No / Disagree <span class="tag-hands">1 Hand</span></div>
-                  <div class="sign-hint">Thumb pointing downward</div>
-                </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">Motion Velocity</span>
+                <span class="telemetry-value" id="telemetry-velocity">0.00</span>
               </div>
-
-              <div class="sign-item" id="sign-card-i_love_you">
-                <div class="sign-icon">🤟</div>
-                <div class="sign-info">
-                  <div class="sign-name">I Love You <span class="tag-hands">1 Hand</span></div>
-                  <div class="sign-hint">Thumb, index, pinky (ASL)</div>
-                </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">Pose State</span>
+                <span class="telemetry-value text-blue" id="telemetry-state">Searching...</span>
               </div>
+            </div>
+          </div>
 
-              <div class="sign-item" id="sign-card-water">
-                <div class="sign-icon">💧</div>
-                <div class="sign-info">
-                  <div class="sign-name">Water / Drink <span class="tag-hands">1 Hand</span></div>
-                  <div class="sign-hint">ASL 'W' handshape (3 fingers)</div>
-                </div>
+          <!-- Dynamic HDC Reflex Memory Feed (Learned Signs) -->
+          <div class="card reflex-memory-card">
+            <div class="card-header">
+              <div>
+                <h4>On-Device HDC Reflex Memory</h4>
+                <p class="section-desc">Zero-shot signs interpreted by Google Gemini automatically cache here for 1.15 μs instant recall</p>
               </div>
+              <span class="badge badge-green" id="reflex-count-badge">0 Signs Cached</span>
+            </div>
 
-              <div class="sign-item" id="sign-card-stop">
-                <div class="sign-icon">✋</div>
-                <div class="sign-info">
-                  <div class="sign-name">Stop / Wait <span class="tag-hands">1 Hand</span></div>
-                  <div class="sign-hint">Flat vertical palm</div>
-                </div>
-              </div>
-
-              <!-- Two-Handed Signs -->
-              <div class="sign-item" id="sign-card-namaste">
-                <div class="sign-icon">🙏</div>
-                <div class="sign-info">
-                  <div class="sign-name">Thank You / Pray <span class="tag-hands tag-hands-2">2 Hands</span></div>
-                  <div class="sign-hint">Both palms pressed together</div>
-                </div>
-              </div>
-
-              <div class="sign-item" id="sign-card-asl_help">
-                <div class="sign-icon">🆘</div>
-                <div class="sign-info">
-                  <div class="sign-name">ASL Help <span class="tag-hands tag-hands-2">2 Hands</span></div>
-                  <div class="sign-hint">Fist resting on flat palm base</div>
-                </div>
-              </div>
-
-              <div class="sign-item" id="sign-card-heart">
-                <div class="sign-icon">❤️</div>
-                <div class="sign-info">
-                  <div class="sign-name">Heart / Love <span class="tag-hands tag-hands-2">2 Hands</span></div>
-                  <div class="sign-hint">Two hands forming heart</div>
-                </div>
-              </div>
-
-              <div class="sign-item" id="sign-card-time_out">
-                <div class="sign-icon">🛑</div>
-                <div class="sign-info">
-                  <div class="sign-name">Time Out <span class="tag-hands tag-hands-2">2 Hands</span></div>
-                  <div class="sign-hint">T-Shape: horizontal & vertical palm</div>
-                </div>
-              </div>
-
-              <div class="sign-item" id="sign-card-welcome">
-                <div class="sign-icon">👐</div>
-                <div class="sign-info">
-                  <div class="sign-name">Welcome / All <span class="tag-hands tag-hands-2">2 Hands</span></div>
-                  <div class="sign-hint">Both open palms facing forward</div>
-                </div>
-              </div>
-
-              <div class="sign-item" id="sign-card-home">
-                <div class="sign-icon">🏠</div>
-                <div class="sign-info">
-                  <div class="sign-name">Home / Family <span class="tag-hands tag-hands-2">2 Hands</span></div>
-                  <div class="sign-hint">Fingertips touching like roof</div>
-                </div>
+            <div class="reflex-memory-feed" id="reflex-memory-feed">
+              <div class="reflex-empty-state" id="reflex-empty-state">
+                <span class="empty-icon">🧠</span>
+                <p>No gestures cached yet.</p>
+                <span class="empty-sub">Make any 1-hand or 2-hand gesture in front of the camera and hold steady. Google Gemini will decode your intent and compile it into this on-device SIMD cache!</span>
               </div>
             </div>
           </div>
         </section>
 
-        <!-- Right Column: Speech Synthesis & Dual-Tier AI -->
+        <!-- Right Column: The Voice, Synthesis & Gemini AI -->
         <section class="speech-column">
           <!-- Card 1: Real-Time Spoken Output -->
           <div class="card speech-card">
@@ -225,7 +193,7 @@
                 </div>
                 <div>
                   <h3 class="speech-heading">Live Spoken Voice</h3>
-                  <span class="speech-sub" id="speech-engine-sub">Hardware Speech Output (Web Speech API)</span>
+                  <span class="speech-sub" id="speech-engine-sub">Speech Synthesizer for Non-Verbal Communication</span>
                 </div>
               </div>
 
@@ -248,7 +216,7 @@
 
             <!-- Big Bold Spoken Text Display -->
             <div class="spoken-display-box">
-              <div class="spoken-quote" id="spoken-phrase-text">"Awaiting sign gesture to speak..."</div>
+              <div class="spoken-quote" id="spoken-phrase-text">"Awaiting hand gesture to speak..."</div>
             </div>
 
             <div class="speech-footer-actions">
@@ -256,21 +224,61 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
                 Repeat Voice
               </button>
-              <div class="confidence-tag badge-green" id="similarity-pill">
-                100% Calibrated Match
+              <div class="confidence-tag badge-subtle" id="similarity-pill">
+                Awaiting Gesture
               </div>
             </div>
           </div>
 
-          <!-- Card 2: Live Conversation & Sentence Builder -->
+          <!-- Card 2: Tier 2 — Gemini 2.0 Multimodal Vision -->
+          <div class="card gemini-card">
+            <div class="gemini-card-header">
+              <div class="gemini-title-group">
+                <div class="gemini-logo-badge">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93 4.93 19.07"></path></svg>
+                </div>
+                <div>
+                  <h4>Tier 2: Google Gemini Vision Brain</h4>
+                  <p class="section-desc">Direct multimodal visual comprehension for open-vocabulary signs</p>
+                </div>
+              </div>
+              <div class="auto-gemini-switch">
+                <label class="switch-label">
+                  <input type="checkbox" id="toggle-auto-gemini" checked />
+                  <span class="switch-slider"></span>
+                  <span class="switch-text">Auto-Translate</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Gemini Result Display -->
+            <div class="gemini-result-card" id="gemini-result-container">
+              <div class="gemini-result-top">
+                <span class="badge badge-purple" id="gemini-status-badge">Gemini Ready</span>
+                <span class="gemini-metrics" id="gemini-latency-badge">Cloud Latency: ~340ms</span>
+              </div>
+              <div class="gemini-quote" id="gemini-translated-phrase">
+                "Hello, I am using SignVox to speak."
+              </div>
+              <div class="gemini-intent-row">
+                <span>Sign: <strong id="gemini-detected-sign">Greeting</strong></span>
+                <span>Intent: <em id="gemini-intent-badge">Introduction</em></span>
+              </div>
+              <button class="btn btn-sm btn-teach" id="btn-teach-gemini-hdc">
+                ⚡ Cache to On-Device HDC SIMD (1.15 μs Reflex)
+              </button>
+            </div>
+          </div>
+
+          <!-- Card 3: Live Conversation & Sentence Builder -->
           <div class="card sentence-card">
             <div class="card-header">
               <div>
                 <h4>Sentence Builder & Conversation Log</h4>
-                <p class="section-desc">Sequence signs together into fluent continuous speech</p>
+                <p class="section-desc">Sequence consecutive gestures into complete continuous dialogue</p>
               </div>
               <div class="sentence-controls">
-                <button class="btn btn-xs btn-ghost" id="btn-undo-word" title="Remove last word">
+                <button class="btn btn-xs btn-ghost" id="btn-undo-word" title="Remove last sentence">
                   ⌫ Undo
                 </button>
                 <button class="btn btn-xs btn-ghost" id="btn-clear-sentence" title="Clear all text">
@@ -280,60 +288,15 @@
             </div>
 
             <div class="sentence-box" id="sentence-display">
-              <span class="sentence-placeholder">Signed words will assemble here... (e.g. "Hello, I need water please")</span>
+              <span class="sentence-placeholder">Signed phrases will assemble here in sequence...</span>
             </div>
 
             <div class="sentence-actions">
               <button class="btn btn-sm btn-primary" id="btn-speak-sentence">
-                🔊 Speak Full Sentence
+                🔊 Speak Full Conversation
               </button>
               <button class="btn btn-sm btn-secondary" id="btn-copy-sentence">
                 📋 Copy Text
-              </button>
-            </div>
-          </div>
-
-          <!-- Card 3: Tier 2 — Gemini 2.0 Multimodal Vision -->
-          <div class="card gemini-card">
-            <div class="gemini-card-header">
-              <div class="gemini-title-group">
-                <div class="gemini-logo-badge">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93 4.93 19.07"></path></svg>
-                </div>
-                <div>
-                  <h4>Tier 2: Gemini 2.0 Vision Interpreter</h4>
-                  <p class="section-desc">Deep multimodal comprehension for complex & novel signs</p>
-                </div>
-              </div>
-              <div class="auto-gemini-switch">
-                <label class="switch-label">
-                  <input type="checkbox" id="toggle-auto-gemini" />
-                  <span class="switch-slider"></span>
-                  <span class="switch-text">Auto-Interpret</span>
-                </label>
-              </div>
-            </div>
-
-            <!-- Gemini Trigger Button -->
-            <button class="btn btn-gemini-pulse" id="btn-gemini-translate">
-              ✨ Ask Gemini to Interpret Frame
-            </button>
-
-            <!-- Gemini Result Display -->
-            <div class="gemini-result-card" id="gemini-result-container">
-              <div class="gemini-result-top">
-                <span class="badge badge-purple" id="gemini-status-badge">Gemini Ready</span>
-                <span class="gemini-metrics" id="gemini-latency-badge">Cloud Latency: ~380ms</span>
-              </div>
-              <div class="gemini-quote" id="gemini-translated-phrase">
-                "Hello everyone, pleased to meet you."
-              </div>
-              <div class="gemini-intent-row">
-                <span>Sign: <strong id="gemini-detected-sign">Open Palm Greeting</strong></span>
-                <span>Intent: <em id="gemini-intent-badge">Friendly Greeting</em></span>
-              </div>
-              <button class="btn btn-sm btn-teach" id="btn-teach-gemini-hdc">
-                ⚡ Teach Sign to On-Device HDC Reflex (1.15 μs Offline)
               </button>
             </div>
           </div>
@@ -342,10 +305,10 @@
           <div class="card trainer-card">
             <div class="card-header">
               <div>
-                <h4>Personalized 1-Shot Sign Trainer</h4>
-                <p class="section-desc">Teach the non-verbal communicator your own custom sign in 2 seconds</p>
+                <h4>1-Shot Rapid Gesture Trainer</h4>
+                <p class="section-desc">Teach the communicator any personal gesture in 2 seconds</p>
               </div>
-              <span class="badge badge-subtle">Zero Retraining</span>
+              <span class="badge badge-subtle">Zero Cloud Retraining</span>
             </div>
 
             <div class="trainer-input-row">
@@ -353,65 +316,36 @@
                 type="text" 
                 id="input-custom-phrase" 
                 class="text-input" 
-                placeholder="Type spoken phrase (e.g. 'Call my daughter')" 
+                placeholder="Type spoken sentence (e.g. 'Please call a doctor')" 
               />
               <button class="btn btn-sm btn-primary" id="btn-record-custom-sign">
                 🔴 Teach Sign (2s)
               </button>
             </div>
-            <div class="trainer-status" id="custom-trainer-status">
-              Ready to learn new custom signs with zero backpropagation.
+            <div class="trainer-feedback" id="custom-trainer-status">
+              Hold any 1-hand or 2-hand gesture steady in frame, then click Teach Sign.
             </div>
           </div>
         </section>
       </main>
 
-      <!-- Bottom Hackathon Architecture Banner (For Judges) -->
+      <!-- Architecture Footer -->
       <footer class="arch-footer">
         <div class="arch-col">
-          <div class="arch-heading text-red">❌ Traditional Cloud Vision</div>
-          <p class="arch-desc">500ms – 2,000ms latency, high bandwidth, drains battery, fails completely offline.</p>
+          <div class="arch-heading text-blue">🧠 Tier 2: Google Gemini Multimodal Vision</div>
+          <p class="arch-desc">Deep open-vocabulary visual translation of any 1-hand or 2-hand sign without hardcoded limitations.</p>
         </div>
         <div class="arch-divider">➔</div>
         <div class="arch-col">
-          <div class="arch-heading text-green">⚡ Tier 1: On-Device HDC SIMD</div>
-          <p class="arch-desc"><strong>1.15 μs ($0.001\text{ms}$) query</strong>, 10,000-bit vectors, 100% local, zero latency reflex.</p>
+          <div class="arch-heading text-green">⚡ Tier 1: On-Device HDC SIMD Kernel</div>
+          <p class="arch-desc"><strong>1.15 μs ($0.001\text{ms}$) hardware reflex</strong>, 10,000-bit vectors, instant local speedup on repeated signs.</p>
         </div>
         <div class="arch-divider">+</div>
         <div class="arch-col">
-          <div class="arch-heading text-blue">🧠 Tier 2: Google Gemini 2.0</div>
-          <p class="arch-desc">Translates novel conversational sign language and auto-caches them back to Tier 1.</p>
+          <div class="arch-heading text-purple">🌸 The Voice Engine</div>
+          <p class="arch-desc">Empathetic, soothing female speech synthesizer acting as the voice for the non-verbal communicator.</p>
         </div>
       </footer>
-
-      <!-- Gemini API Key Configuration Modal -->
-      <div id="gemini-key-modal" class="modal-backdrop" style="display: none;">
-        <div class="modal-card">
-          <div class="modal-header">
-            <h3>🔑 Configure Google Gemini 2.0 API Key</h3>
-            <button class="btn-close-modal" id="btn-close-key-modal">&times;</button>
-          </div>
-          <div class="modal-body">
-            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
-              Enter your Google AI Studio Gemini API key to enable Tier 2 live multimodal vision translation.
-            </p>
-            <input 
-              type="password" 
-              id="input-gemini-api-key" 
-              class="text-input" 
-              placeholder="AIzaSy..." 
-              style="width: 100%; margin-bottom: 16px;"
-            />
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 16px;">
-              Your key is saved locally in your browser storage and never uploaded to any third-party server.
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-sm btn-ghost" id="btn-cancel-key-modal">Cancel</button>
-            <button class="btn btn-sm btn-primary" id="btn-save-key-modal">Save & Activate</button>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- Main Entry Module -->

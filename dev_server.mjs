@@ -56,6 +56,41 @@ const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   let reqPath = decodeURIComponent(req.url.split('?')[0]);
+
+  // Support API Key storage and retrieval
+  if (reqPath === '/api/key') {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          const key = (parsed.apiKey || '').trim();
+          if (key) {
+            fs.writeFileSync(path.join(__dirname, '.env'), `GEMINI_API_KEY=${key}\n`, 'utf-8');
+            process.env.GEMINI_API_KEY = key;
+          }
+          res.end(JSON.stringify({ success: true, saved: Boolean(key) }));
+        } catch {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        }
+      });
+      return;
+    } else {
+      let apiKey = process.env.GEMINI_API_KEY || '';
+      const envPath = path.join(__dirname, '.env');
+      if (!apiKey && fs.existsSync(envPath)) {
+        const envContent = fs.readFileSync(envPath, 'utf-8');
+        const match = envContent.match(/GEMINI_API_KEY\s*=\s*([^\s\r\n]+)/);
+        if (match) apiKey = match[1];
+      }
+      res.end(JSON.stringify({ apiKey }));
+      return;
+    }
+  }
+
   if (reqPath === '/') reqPath = '/index.html';
 
   let localPath = path.join(__dirname, reqPath);
