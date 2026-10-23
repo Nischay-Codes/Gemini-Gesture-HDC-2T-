@@ -1,9 +1,19 @@
 {
-  "name": "gemini-gesture-hdc",
-  "version": "1.0.0",
+  "name": "hdc-zero-web",
+  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "python3 -m http.server 3000",
-    "test": "node test_kernel.mjs"
+    "start": "node dev_server.mjs",
+    "dev": "node dev_server.mjs",
+    "build": "tsc",
+    "preview": "node dev_server.mjs"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.14"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
   }
 }

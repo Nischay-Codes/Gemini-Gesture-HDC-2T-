@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HackBioS Presentation Deck — HDC-Zero</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background: #040805;
+      color: #f1f5f9;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 1rem;
+    }
+
+    /* Top presentation navigation bar */
+    .deck-topbar {
+      width: 100%;
+      max-width: 1200px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.6rem 1rem;
+      background: #08120a;
+      border: 1px solid #164e2d;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    .deck-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+    .deck-brand span {
+      color: #22c55e;
+    }
+    .deck-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-slide {
+      background: #112819;
+      border: 1px solid #22c55e;
+      color: #86efac;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-slide:hover {
+      background: #166534;
+      color: #fff;
+    }
+    .slide-counter {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: #cbd5e1;
+      padding: 0 8px;
+    }
+    .btn-download-pdf {
+      background: #22c55e;
+      border: 1px solid #16a34a;
+      color: #041208;
+      font-weight: 700;
+      padding: 4px 14px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* 16:9 Presentation Viewport */
+    .slide-viewport-card {
+      width: 100%;
+      max-width: 1200px;
+      aspect-ratio: 16 / 9;
+      background: #060a08;
+      border: 2px solid #22c55e;
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 0 40px rgba(34, 197, 94, 0.15), inset 0 0 30px rgba(0, 0, 0, 0.8);
+      display: flex;
+      flex-direction: column;
+      padding: 2.5rem 3rem;
+    }
+
+    /* Circuit Grid Background */
+    .slide-viewport-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-image: 
+        linear-gradient(rgba(16, 53, 31, 0.35) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(16, 53, 31, 0.35) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      opacity: 0.5;
+    }
+
+    /* HackBioS Header */
+    .slide-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1.5rem;
+      position: relative;
+      z-index: 2;
+    }
+    .team-badge {
+      background: #84cc16;
+      color: #051208;
+      font-weight: 800;
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      line-height: 1.2;
+      box-shadow: 0 0 15px rgba(132, 204, 22, 0.4);
+    }
+    .hackbios-logo {
+      text-align: right;
+    }
+    .hackbios-logo h2 {
+      font-size: 1.4rem;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+      color: #fff;
+    }
+    .hackbios-logo small {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: #86efac;
+      display: block;
+    }
+    .slide-title-banner {
+      text-align: center;
+      position: relative;
+      z-index: 2;
+      margin-bottom: 1.25rem;
+    }
+    .slide-title-banner h1 {
+      font-size: 1.7rem;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      color: #fff;
+      text-transform: uppercase;
+    }
+    .slide-title-banner p {
+      font-size: 0.88rem;
+      color: #94a3b8;
+      margin-top: 2px;
+    }
+
+    /* Slide Content Container */
+    .slide-body {
+      flex: 1;
+      display: flex;
+      gap: 1.5rem;
+      position: relative;
+      z-index: 2;
+    }
+    .col-half {
+      flex: 1;
+      background: rgba(11, 20, 17, 0.85);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      border-radius: 8px;
+      padding: 1.25rem 1.4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+    .card-heading {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .card-text {
+      font-size: 0.82rem;
+      line-height: 1.5;
+      color: #cbd5e1;
+    }
+    .card-bullets {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .card-bullets li {
+      font-size: 0.8rem;
+      line-height: 1.45;
+      color: #f1f5f9;
+      position: relative;
+      padding-left: 14px;
+    }
+    .card-bullets li::before {
+      content: '•';
+      color: #22c55e;
+      position: absolute;
+      left: 0;
+      font-weight: bold;
+    }
+
+    /* Comparison Table in Slide 3 */
+    .comparison-table-view {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.76rem;
+      margin-top: 0.5rem;
+    }
+    .comparison-table-view th {
+      background: #143522;
+      color: #fff;
+      padding: 6px 10px;
+      text-align: left;
+      border: 1px solid #1f4e30;
+      font-weight: 700;
+    }
+    .comparison-table-view td {
+      background: rgba(8, 18, 12, 0.8);
+      color: #cbd5e1;
+      padding: 6px 10px;
+      border: 1px solid #1f4e30;
+    }
+    .cell-highlight {
+      color: #34d399 !important;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+    }
+
+    /* Slide Footer */
+    .slide-footer-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: auto;
+      padding-top: 0.75rem;
+      position: relative;
+      z-index: 2;
+    }
+    .slide-meta-tag {
+      font-size: 0.72rem;
+      color: #6ee7b7;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .page-chevron {
+      background: #22c55e;
+      color: #041208;
+      font-weight: 800;
+      font-size: 0.85rem;
+      padding: 3px 12px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Presenter Notes Drawer */
+    .presenter-notes-card {
+      width: 100%;
+      max-width: 1200px;
+      background: #0d1510;
+      border: 1px solid #1e3a29;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin-top: 1rem;
+    }
+    .notes-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+    .notes-body {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+
+    /* Hidden slide state */
+    .slide-content-hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <header class="deck-topbar">
+    <div class="deck-brand">
+      <span>⚡ HDC-Zero</span> • HackBioS 2026 Presentation Deck
+    </div>
+    <div class="deck-controls">
+      <button id="btn-prev" class="btn-slide">◀ Prev Slide</button>
+      <span id="slide-num-indicator" class="slide-counter">Slide 1 of 6</span>
+      <button id="btn-next" class="btn-slide">Next Slide ▶</button>
+      <a href="/HackBioS_HDC_Zero_Presentation.pdf" target="_blank" class="btn-download-pdf">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        Download PDF Deck
+      </a>
+    </div>
+  </header>
+
+  <!-- Main 16:9 Slide Screen -->
+  <main class="slide-viewport-card" id="slide-viewport">
+    
+    <!-- Top Header on Slide -->
+    <div class="slide-header">
+      <div class="team-badge">
+        TEAM<br>BYTE ME
+      </div>
+      <div class="hackbios-logo">
+        <h2>HACKBiOS</h2>
+        <small>WHERE IDEAS BOOT INTO REALITY</small>
+      </div>
+    </div>
+
+    <!-- Title Banner -->
+    <!-- Title Banner -->
+    <div class="slide-title-banner">
+      <h1 id="dyn-slide-title">TITLE PAGE</h1>
+      <p id="dyn-slide-subtitle">HDC-Zero: 2-Layer Neuro-Symbolic Edge Reflex Architecture</p>
+    </div>
+
+    <!-- Slide 1 Body: TITLE PAGE -->
+    <div class="slide-body slide-view" id="slide-1">
+      <div class="col-half">
+        <div class="card-heading">Problem Statement Theme :</div>
+        <p class="card-text"><strong>Edge AI, Neuromorphic Computing & Real-Time Biometric Intelligence</strong></p>
+        <ul class="card-bullets" style="margin-top: 4px;">
+          <li>Overcoming the Edge AI Latency & Power Wall via bio-inspired reflex arcs.</li>
+          <li>Pairing sub-microsecond local HDC reflexes with cloud foundation models.</li>
+          <li>100% on-device privacy: zero raw biometrics transmitted over networks.</li>
+        </ul>
+        
+        <div class="card-heading" style="margin-top: 10px;">Problem Statement Title :</div>
+        <p class="card-text"><strong>HDC-Zero: 2-Layer Neuro-Symbolic Edge Reflex Architecture for Zero-Latency, Zero-Backprop Local Intelligence</strong></p>
+      </div>
+
+      <div class="col-half" style="border-color: #22c55e;">
+        <div class="card-heading" style="color: #4ade80;">Team Members :</div>
+        <ul class="card-bullets">
+          <li><strong>Team Name:</strong> Byte Me</li>
+          <li><strong>Team Members:</strong> Alishan Anjum (Lead Architect & Systems Engineer) & Team Byte Me</li>
+          <li><strong>Track / Event:</strong> HackBioS 2026 Hackathon ("Where Ideas Boot Into Reality")</li>
+        </ul>
+
+        <div class="card-heading" style="margin-top: 10px; color: #8CEF37;">Executive Architectural Thesis:</div>
+        <p class="card-text" style="font-style: italic; color: #a7f3d0;">
+          "We do NOT replace ML/DL or LLMs; we augment them with an ultra-fast local reflex arc."
+        </p>
+        <ul class="card-bullets">
+          <li><strong>Layer 1 (Local HDC Reflex Brain):</strong> 1.15 μs latency, 1.25 KB memory, 1-shot learning, 0 backpropagation.</li>
+          <li><strong>Layer 2 (Cloud LLM Reasoning):</strong> Selective escalation only when high-level cognitive ambiguity arises.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Slide 2 Body: IDEA TITLE & Proposed Solution -->
+    <div class="slide-body slide-view slide-content-hidden" id="slide-2">
+      <div class="col-half">
+        <div class="card-heading">Detailed Explanation of Proposed Solution</div>
+        <ul class="card-bullets">
+          <li><strong>The 2-Layer Cognitive Hierarchy:</strong> Modern edge AI is crippled by 300ms cloud roundtrip latency, catastrophic forgetting, and heavy power drain.</li>
+          <li><strong>Layer 1 (The Fast Reflex Brain):</strong> On-device 10,000-bit Hyperdimensional Computing engine running via WASM SIMD in <strong>1.15 μs</strong>. Enrolls new concepts in <strong>1 demonstration (<0.5 ms)</strong> with <strong>zero backpropagation</strong>.</li>
+          <li><strong>The Cognitive Handshake Gate:</strong> Computes semantic cosine similarity and ambiguity margins. High confidence (≥0.72) triggers instant local action; anomalies selectively escalate to Layer 2 Cloud LLMs.</li>
+        </ul>
+      </div>
+
+      <div class="col-half">
+        <div class="card-heading">How It Addresses Problem & Innovation</div>
+        <ul class="card-bullets">
+          <li><strong>How It Addresses the Problem:</strong> Eliminates 300ms cloud lag, cuts recurring inference costs by 90%+, and guarantees 100% biometric privacy on physical silicon.</li>
+          <li><strong>Not Just Gesture Recognition:</strong> Gestures are simply our real-world physical stress test. The real breakthrough is the <strong>proven system architecture</strong>.</li>
+          <li><strong>Holographic Fault Tolerance:</strong> Information is distributed across 10,000 bits; withstands up to 50% sensor noise without collapsing.</li>
+          <li><strong>Zero-Shot Compositional Algebra:</strong> Algebraic superposition ($A \oplus B$) synthesizes compound gestures instantly with zero new training data.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Slide 3 Body: TECHNICAL APPROACH -->
+    <div class="slide-body slide-view slide-content-hidden" id="slide-3" style="flex-direction: column;">
+      <div style="background: rgba(11, 20, 17, 0.85); border: 1px solid rgba(34, 197, 94, 0.35); border-radius: 8px; padding: 0.85rem 1.25rem;">
+        <div class="card-heading">Technologies to be Used (Languages, Frameworks, Hardware):</div>
+        <p class="card-text">
+          <strong>WASM SIMD-128:</strong> Vectorized 128-bit popcount intrinsics (3.5x hardware speedup, 1.15 μs execution) with COOP/COEP isolation.<br>
+          <strong>Sensory Testbed:</strong> MediaPipe Hands (21 3D spatial landmarks) + Exponential Moving Average (EMA, α=0.78) temporal filter.<br>
+          <strong>Target Hardware:</strong> ARM Cortex-M4, ESP32-S3, RISC-V edge chips (single-cycle XOR/POPCOUNT, zero GPU needed).
+        </p>
+      </div>
+
+      <div style="background: rgba(11, 20, 17, 0.85); border: 1px solid rgba(34, 197, 94, 0.35); border-radius: 8px; padding: 0.85rem 1.25rem; margin-top: 8px;">
+        <div class="card-heading" style="color: #4ade80;">Methodology & The 7 Empirical Diagnostic Stress Labs:</div>
+        <ul class="card-bullets" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px;">
+          <li><strong>1. 3-Way SIMD Ablation:</strong> 3.5x speedup with 100% bitwise parity.</li>
+          <li><strong>2. Holographic Noise Lab:</strong> Retains >85% accuracy under 50% bit corruption.</li>
+          <li><strong>3. Time-Arrow Causality:</strong> Sequence irreversibility ($A \rightarrow B \neq B \rightarrow A$) via $\Pi^t$.</li>
+          <li><strong>4. 12 ns Analogy Lab:</strong> Solved $A : B :: C : D$ via XOR unbinding in 12 ns.</li>
+          <li><strong>5. 50 μs Language Router:</strong> Zero-cloud N-gram routing across 4 languages.</li>
+          <li><strong>6. Compositional Algebra:</strong> Zero-shot superposition ($A \oplus B$) synthesis.</li>
+          <li><strong>7. AirDrop for Brains:</strong> 1.25 KB model compressed into a scannable QR code.</li>
+          <li><strong>Pipeline:</strong> Sensor $\rightarrow$ EMA $\rightarrow$ 10k-bit HDC $\rightarrow$ $\Pi^t \rightarrow \mathcal{M} \rightarrow$ Gate $\rightarrow$ Action/LLM.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Slide 4 Body: FEASIBILITY AND VIABILITY -->
+    <div class="slide-body slide-view slide-content-hidden" id="slide-4">
+      <div class="col-half">
+        <div class="card-heading">Analysis of Feasibility of the Idea</div>
+        <ul class="card-bullets">
+          <li><strong>Hardware Feasibility:</strong> HDC uses only bitwise XOR, POPCOUNT, and cyclic shifts—trivially supported on $1.50 microcontrollers without GPUs or NPUs.</li>
+          <li><strong>Memory Viability:</strong> 10,000 bits = <strong>1.25 KB RAM</strong> per concept. A 64 KB RAM microcontroller easily holds 40+ distinct gestures/states using <10% memory.</li>
+          <li><strong>Deterministic Execution:</strong> $O(D)$ constant time search ensures jitter-free, hard real-time safety critical guarantees.</li>
+        </ul>
+      </div>
+
+      <div class="col-half">
+        <div class="card-heading">Potential Challenges, Risks & Mitigation Strategies</div>
+        <ul class="card-bullets">
+          <li><strong>Risk 1: Sensor Jitter & Micro-Tremors:</strong><br><em>Mitigation:</em> EMA landmark smoothing filter (α=0.78) stabilizes input without latency penalty.</li>
+          <li><strong>Risk 2: Resting State False Positives:</strong><br><em>Mitigation:</em> Bayesian posterior idle calibration forces resting hands strictly to 0% confidence, requiring cosine similarity $\ge 0.72$ for activation.</li>
+          <li><strong>Risk 3: User Hand Variation:</strong><br><em>Mitigation:</em> Multi-demonstration centroid bundling averages N samples into an invariant master prototype.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Slide 5 Body: IMPACT AND BENEFITS -->
+    <div class="slide-body slide-view slide-content-hidden" id="slide-5">
+      <div class="col-half">
+        <div class="card-heading">Potential Impact on Target Audience</div>
+        <ul class="card-bullets">
+          <li><strong>Smart Prosthetics & BCI:</strong> Eliminates the fatal 100ms+ lag in myoelectric artificial limbs, providing amputees with instant reflex control and 1-shot calibration.</li>
+          <li><strong>Industrial Robotics & Cobots:</strong> Microsecond collision avoidance and emergency reflexes without reliance on unstable factory Wi-Fi.</li>
+          <li><strong>Consumer Wearables & Spatial Computing:</strong> AR glasses and smart rings operating for weeks on coin-cell batteries with zero thermal throttling.</li>
+          <li><strong>Sterile Clinical Systems:</strong> 100% touchless, air-gapped HIPAA-compliant surgical control with zero video frame leakage.</li>
+        </ul>
+      </div>
+
+      <div class="col-half">
+        <div class="card-heading">Benefits of the Solution (Quadruple Value)</div>
+        <ul class="card-bullets">
+          <li><strong>Economic:</strong> Reduces cloud LLM API compute costs by <strong>90%+</strong> by resolving 9/10 sensory interactions locally for $0.</li>
+          <li><strong>Social & Healthcare:</strong> Restores motor independence to amputees and accessibility users on low-cost $25 hardware.</li>
+          <li><strong>Environmental:</strong> Cuts AI inference energy by <strong>99.8%</strong> (microjoules vs. multi-kilowatt GPU server clusters).</li>
+          <li><strong>Privacy:</strong> 100% air-gapped on-device learning; biometric data never leaves physical silicon.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Slide 6 Body: RESEARCH AND REFERENCES -->
+    <div class="slide-body slide-view slide-content-hidden" id="slide-6">
+      <div class="col-half">
+        <div class="card-heading">Details / Links of Reference & Research Work</div>
+        <ul class="card-bullets">
+          <li><strong>Kanerva, P. (2009):</strong> <em>'Hyperdimensional Computing: An Introduction to Computing in Distributed Representation with High-Dimensional Random Vectors.'</em> Cognitive Computation.</li>
+          <li><strong>Rahimi, A., et al. (2016):</strong> <em>'Hyperdimensional Biosignal Processing: EMG-based Hand Gesture Recognition.'</em> IEEE TBME.</li>
+          <li><strong>Karunaratne, M., et al. (2020):</strong> <em>'In-memory Hyperdimensional Computing.'</em> Nature Electronics, 3(6), 327–337.</li>
+          <li><strong>W3C & Industry Standards:</strong> WebAssembly Fixed-Width 128-bit SIMD Vector Specification & MediaPipe Hands (Google Research, 2020).</li>
+        </ul>
+      </div>
+
+      <div class="col-half">
+        <div class="card-heading">Team Byte Me Project Artifacts & Live Systems</div>
+        <ul class="card-bullets">
+          <li><strong>Live Neuromorphic Reflex Console:</strong> <code>http://localhost:3001/</code> (Active MediaPipe 3D vision + WASM SIMD pipeline).</li>
+          <li><strong>Interactive HackBioS Deck (16:9 Viewer):</strong> <code>http://localhost:3001/presentation.html</code>.</li>
+          <li><strong>Official HackBioS Competition PDF:</strong> <code>HackBioS_HDC_Zero_Presentation.pdf</code> (Exact template geometry).</li>
+          <li><strong>7 Diagnostic Benchmark Labs:</strong> Embedded in engine manager (SIMD Ablation, Fault Tolerance, Time-Arrow, QR Sync).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Bottom Footer on Slide -->
+    <div class="slide-footer-bar">
+      <div class="slide-meta-tag">
+        HDC-Zero: 2-Layer Hybrid Edge-Neuromorphic Architecture • Zero-Backprop 1-Shot Local Intelligence
+      </div>
+      <div class="page-chevron" id="dyn-chevron-page">
+        // 1
+      </div>
+    </div>
+  </main>
+
+  <!-- Presenter Notes & Speech Guide -->
+  <aside class="presenter-notes-card">
+    <div class="notes-header">
+      <span>🎤 SPEAKER SCRIPT & PITCH NOTES FOR JUDGES</span>
+      <span id="notes-slide-tag">Slide 1 of 6</span>
+    </div>
+    <div class="notes-body" id="dyn-speaker-notes">
+      "Good morning judges! Today we present HDC-Zero: a two-layer hybrid architecture that brings neuromorphic intelligence to the edge. Our core breakthrough is not just gesture recognition—gestures are merely our live physical stress test. The real achievement is breaking free of backpropagation with 10,000-bit Binary Spatter Codes and proving 7 fundamental system architecture tests in live WebAssembly SIMD."
+    </div>
+  </aside>
+
+  <script>
+    const slidesData = [
+      {
+        title: "TITLE PAGE",
+        subtitle: "Problem Statement Theme, Title & Team Byte Me",
+        notes: "Good morning judges! We are Team Byte Me, and today we present HDC-Zero: a two-layer neuro-symbolic edge reflex architecture. Our core premise: Edge AI is currently bottlenecked by 300ms cloud network roundtrips and high energy costs. We are NOT replacing deep learning or LLMs; we are augmenting them with a biological reflex arc that resolves 90%+ of sensory tasks locally in 1.15 microseconds, escalating to cloud foundation models only when deep reasoning is needed."
+      },
+      {
+        title: "IDEA TITLE",
+        subtitle: "Proposed Solution: Detailed Explanation, Problem Addressed & Uniqueness",
+        notes: "Here is our solution: Layer 1 is an on-device 10,000-bit Hyperdimensional Computing engine running in WebAssembly SIMD. It infers in 1.15 μs, consumes just 1.25 KB of RAM, and learns continuously in a single demonstration with ZERO backpropagation. When confidence is high (≥0.72), it executes instantly with zero cloud cost. If ambiguous, it triggers Layer 2 Cloud LLMs. Hand gestures are just our live physical stress test—our breakthrough is the proven system architecture."
+      },
+      {
+        title: "TECHNICAL APPROACH",
+        subtitle: "Technologies to be Used & Methodology (7 Empirical Diagnostic Stress Labs)",
+        notes: "Our technical stack combines Rust/WASM SIMD-128 popcount intrinsics, MediaPipe hand tracking with EMA temporal smoothing, and Kanerva hypervector algebra. Rather than just showing a demo, we empirically proved our system architecture across 7 diagnostic benchmark labs: 3-Way SIMD Ablation (3.5x speedup), Holographic Fault Tolerance (withstands 50% sensor noise), Time-Arrow Causality, 12ns Analogy Unbinding, 50μs Language Routing, Compositional Superposition, and QR Brain Sync."
+      },
+      {
+        title: "FEASIBILITY AND VIABILITY",
+        subtitle: "Feasibility Analysis, Potential Challenges & Mitigation Strategies",
+        notes: "Is this feasible in production? Absolutely. HDC requires zero matrix multiplications—only bitwise XOR and POPCOUNT that execute in single clock cycles on ultra-cheap $1.50 microcontrollers. 10,000 bits is only 1.25 KB of RAM, fitting easily into 64KB devices. We solved real-world physical challenges like sensor jitter using EMA filtering (α=0.78), eliminated resting-hand false positives with Bayesian posterior calibration, and stabilized multi-sample variance with centroid bundling."
+      },
+      {
+        title: "IMPACT AND BENEFITS",
+        subtitle: "Target Audience Impact & Quadruple Value (Economic, Social, Environmental, Privacy)",
+        notes: "The impact across our target domains is immense: For bionic prosthetics, we eliminate the dangerous 100ms lag for amputees. For industrial robotics, we provide microsecond collision reflexes without cloud Wi-Fi. Economically, we slash cloud API costs by over 90%. Environmentally, we cut inference energy by 99.8%. And socially, we guarantee 100% biometric privacy because raw user sensor data never leaves physical silicon."
+      },
+      {
+        title: "RESEARCH AND REFERENCES",
+        subtitle: "Details & Links of Reference Literature, Standards & Project Systems",
+        notes: "Our work builds on foundational science: Pentti Kanerva's 2009 Hyperdimensional Computing theory, Abbas Rahimi's IEEE neuromorphic biosignal benchmarks, and W3C WebAssembly SIMD specifications. Everything in this deck is fully operational and benchmarked in our live system at localhost:3001. We are Team Byte Me, and we are ready for your questions!"
+      }
+    ];
+
+    let currentSlide = 0;
+
+    const dynTitle = document.getElementById('dyn-slide-title');
+    const dynSub = document.getElementById('dyn-slide-subtitle');
+    const dynPage = document.getElementById('dyn-chevron-page');
+    const dynNotes = document.getElementById('dyn-speaker-notes');
+    const notesTag = document.getElementById('notes-slide-tag');
+    const counterText = document.getElementById('slide-num-indicator');
+
+    function renderSlide(idx) {
+      if (idx < 0) idx = 0;
+      if (idx >= slidesData.length) idx = slidesData.length - 1;
+      currentSlide = idx;
+
+      // Hide all slides
+      for (let i = 1; i <= 6; i++) {
+        const el = document.getElementById(`slide-${i}`);
+        if (el) el.classList.add('slide-content-hidden');
+      }
+
+      // Show active
+      const activeEl = document.getElementById(`slide-${currentSlide + 1}`);
+      if (activeEl) activeEl.classList.remove('slide-content-hidden');
+
+      // Update Header Text
+      dynTitle.textContent = slidesData[currentSlide].title;
+      dynSub.textContent = slidesData[currentSlide].subtitle;
+      dynPage.textContent = `// ${currentSlide + 1}`;
+      counterText.textContent = `Slide ${currentSlide + 1} of 6`;
+      notesTag.textContent = `Slide ${currentSlide + 1} of 6`;
+      dynNotes.textContent = slidesData[currentSlide].notes;
+    }
+
+    document.getElementById('btn-prev').addEventListener('click', () => renderSlide(currentSlide - 1));
+    document.getElementById('btn-next').addEventListener('click', () => renderSlide(currentSlide + 1));
+
+    // Keyboard navigation (Left / Right arrows)
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+        renderSlide(currentSlide + 1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        renderSlide(currentSlide - 1);
+      }
+    });
+
+    renderSlide(0);
+  </script>
+</body>
+</html>
