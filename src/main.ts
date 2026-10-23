@@ -128,7 +128,7 @@ class SignVoxApp {
     this.btnMirrorCam = document.getElementById('btn-mirror-cam') as HTMLButtonElement;
 
     // Services
-    this.cameraManager = new CameraManager();
+    this.cameraManager = new CameraManager(this.videoEl);
     this.handTracker = new HandTracker();
     this.trajectoryBuffer = new TrajectoryBuffer();
     this.engineManager = new EngineManager();
@@ -181,8 +181,8 @@ class SignVoxApp {
     // 5. Pre-seed HDC Memory with Canonical Sign Language Hypervectors
     this.seedCanonicalHdcMemory();
 
-    // 6. Start Live Camera
-    await this.startCamera();
+    // 6. Attempt Start Live Camera (graceful on Safari/Chrome autoplay restrictions)
+    this.startCamera().catch(() => {});
 
     // 7. Start Render Loop
     this.isRunning = true;
@@ -208,27 +208,50 @@ class SignVoxApp {
   }
 
   private async startCamera(): Promise<void> {
+    const prompt = document.getElementById('camera-start-prompt');
     try {
-      await this.cameraManager.start(this.videoEl);
-      this.videoEl.onloadedmetadata = () => {
-        this.canvasEl.width = this.videoEl.videoWidth || 640;
-        this.canvasEl.height = this.videoEl.videoHeight || 480;
-      };
-      this.btnToggleCam.textContent = 'Stop Camera';
+      this.btnToggleCam.textContent = 'Connecting...';
+      const ok = await this.cameraManager.start(this.videoEl);
+      if (ok) {
+        this.videoEl.onloadedmetadata = () => {
+          this.canvasEl.width = this.videoEl.videoWidth || 640;
+          this.canvasEl.height = this.videoEl.videoHeight || 480;
+        };
+        this.btnToggleCam.textContent = 'Stop Camera';
+        if (prompt) prompt.style.display = 'none';
+      } else {
+        this.btnToggleCam.textContent = 'Start Camera';
+        if (prompt) prompt.style.display = 'flex';
+      }
     } catch (err) {
       console.warn('Camera start error:', err);
+      this.btnToggleCam.textContent = 'Start Camera';
+      if (prompt) prompt.style.display = 'flex';
     }
   }
 
   private setupEventListeners(): void {
     // Camera Controls
     this.btnToggleCam.addEventListener('click', async () => {
+      const prompt = document.getElementById('camera-start-prompt');
       if (this.cameraManager.isStreaming()) {
         this.cameraManager.stop();
         this.btnToggleCam.textContent = 'Start Camera';
+        if (prompt) prompt.style.display = 'flex';
       } else {
         await this.startCamera();
       }
+    });
+
+    const promptBtn = document.getElementById('btn-prompt-start-cam');
+    promptBtn?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await this.startCamera();
+    });
+
+    const promptContainer = document.getElementById('camera-start-prompt');
+    promptContainer?.addEventListener('click', async () => {
+      await this.startCamera();
     });
 
     this.btnMirrorCam.addEventListener('click', () => {

@@ -78,6 +78,14 @@
               <video id="webcam-video" autoplay playsinline muted></video>
               <canvas id="skeleton-canvas"></canvas>
 
+              <!-- Click to Turn On Camera Prompt (for Safari / Chrome permissions) -->
+              <div class="camera-start-prompt" id="camera-start-prompt">
+                <button class="btn btn-primary" id="btn-prompt-start-cam" style="padding: 0.85rem 1.6rem; font-size: 0.95rem; font-weight: 700; box-shadow: 0 4px 20px rgba(56, 189, 248, 0.4);">
+                  📹 Turn On Live Camera
+                </button>
+                <p style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.6rem;">Click to allow browser webcam access</p>
+              </div>
+
               <!-- Live Sign Detection HUD Overlay -->
               <div class="camera-hud-overlay" id="camera-hud">
                 <div class="hud-sign-badge" id="hud-sign-badge">

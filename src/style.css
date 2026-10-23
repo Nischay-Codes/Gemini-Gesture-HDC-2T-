@@ -262,6 +262,22 @@ body {
   transform: scaleX(-1);
 }
 
+.camera-start-prompt {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 8, 11, 0.78);
+  backdrop-filter: blur(8px);
+  z-index: 10;
+  cursor: pointer;
+}
+
 .camera-hud-overlay {
   position: absolute;
   bottom: 14px;
