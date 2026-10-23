@@ -1,10 +1,10 @@
 /**
- * Google Gemini 2.0 Flash Multimodal Vision Service
+ * Google Gemini Multimodal Vision Service
  * 
  * Direct Real-Time Assistive Communication Engine:
  * - Analyzes video frames of live hand signs and complex 2-handed gestures using Google Gemini
  * - Formulates fluent, natural, empathetic first-person speech for non-verbal communicators
- * - Structured JSON output used to continuously seed the on-device HDC 10,000-bit SIMD memory
+ * - Zero CORS/COEP friction via local high-speed server proxy with direct fallback
  */
 
 export interface GeminiInterpretation {
@@ -14,8 +14,18 @@ export interface GeminiInterpretation {
   intent: string;
   confidence: number;
   latencyMs: number;
-  source: 'gemini-2.0-flash' | 'gemini-1.5-flash' | 'none';
+  source: string;
   error?: string;
+}
+
+export function sanitizeApiKey(raw: string): string {
+  if (!raw || typeof raw !== 'string') return '';
+  let cleaned = raw.trim();
+  cleaned = cleaned.replace(/^["'`]|["'`]$/g, '').trim();
+  cleaned = cleaned.replace(/^(?:GEMINI_API_KEY|API_KEY|key)\s*[:=]\s*/i, '').trim();
+  const match = cleaned.match(/AIzaSy[A-Za-z0-9_-]{25,50}/);
+  if (match) return match[0];
+  return cleaned;
 }
 
 export class GeminiService {
@@ -34,9 +44,12 @@ export class GeminiService {
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const urlKey = urlParams.get('apiKey') || urlParams.get('key');
-      if (urlKey && urlKey.trim().length > 10) {
-        this.setApiKey(urlKey.trim());
-        return;
+      if (urlKey) {
+        const clean = sanitizeApiKey(urlKey);
+        if (clean.length > 10) {
+          this.setApiKey(clean);
+          return;
+        }
       }
     } catch {
       // Ignore URL parsing errors
@@ -44,9 +57,12 @@ export class GeminiService {
 
     // 2. Check localStorage
     const local = localStorage.getItem('GEMINI_API_KEY');
-    if (local && local.trim().length > 10) {
-      this.apiKey = local.trim();
-      return;
+    if (local) {
+      const clean = sanitizeApiKey(local);
+      if (clean.length > 10) {
+        this.apiKey = clean;
+        return;
+      }
     }
 
     // 3. Check server .env / config
@@ -54,9 +70,12 @@ export class GeminiService {
       const res = await fetch('/api/key');
       if (res.ok) {
         const data = await res.json();
-        if (data.apiKey && data.apiKey.trim().length > 10) {
-          this.apiKey = data.apiKey.trim();
-          localStorage.setItem('GEMINI_API_KEY', this.apiKey);
+        if (data.apiKey) {
+          const clean = sanitizeApiKey(data.apiKey);
+          if (clean.length > 10) {
+            this.apiKey = clean;
+            localStorage.setItem('GEMINI_API_KEY', this.apiKey);
+          }
         }
       }
     } catch {
@@ -69,10 +88,10 @@ export class GeminiService {
   }
 
   public setApiKey(key: string): void {
-    this.apiKey = (key || '').trim();
+    this.apiKey = sanitizeApiKey(key);
     if (this.apiKey) {
       localStorage.setItem('GEMINI_API_KEY', this.apiKey);
-      // Persist to server if available
+      // Persist to server
       fetch('/api/key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -92,37 +111,72 @@ export class GeminiService {
   }
 
   /**
-   * Test API Key connection directly with Google Generative AI
+   * Test API Key connection via high-speed server proxy (bypasses browser CORS & COEP)
    */
   public async testConnection(keyToTest?: string): Promise<{ success: boolean; model: string; message: string; latencyMs: number }> {
-    const key = (keyToTest || this.apiKey).trim();
-    if (!key) {
+    const rawKey = keyToTest || this.apiKey;
+    const cleanKey = sanitizeApiKey(rawKey);
+
+    if (!cleanKey) {
       return { success: false, model: '', message: 'API key is empty', latencyMs: 0 };
     }
 
     const t0 = performance.now();
-    let modelToUse = 'gemini-2.0-flash';
 
+    // 1. Try server proxy (best path, completely immune to browser CORS / COEP restrictions)
     try {
-      let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${key}`;
+      const proxyRes = await fetch('/api/gemini/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: cleanKey })
+      });
+
+      if (proxyRes.ok) {
+        const data = await proxyRes.json();
+        if (data.success) {
+          this.apiKey = data.key || cleanKey;
+          this.activeModel = data.model || 'gemini-2.0-flash';
+          localStorage.setItem('GEMINI_API_KEY', this.apiKey);
+          return {
+            success: true,
+            model: this.activeModel,
+            message: data.message || `Connected to ${this.activeModel}`,
+            latencyMs: data.latencyMs || Math.round(performance.now() - t0)
+          };
+        } else {
+          return {
+            success: false,
+            model: data.model || 'gemini-2.0-flash',
+            message: data.message || 'Validation failed',
+            latencyMs: Math.round(performance.now() - t0)
+          };
+        }
+      }
+    } catch {
+      // Fall through to direct fetch
+    }
+
+    // 2. Direct browser fetch fallback
+    let modelToUse = 'gemini-2.0-flash';
+    try {
+      let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${cleanKey}`;
       let res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: 'Respond with the single word: READY' }] }],
+          contents: [{ parts: [{ text: 'Respond with: READY' }] }],
           generationConfig: { maxOutputTokens: 5 }
         })
       });
 
       if (!res.ok && res.status === 404) {
-        // Fallback to gemini-1.5-flash
         modelToUse = 'gemini-1.5-flash';
-        endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${key}`;
+        endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${cleanKey}`;
         res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: 'Respond with the single word: READY' }] }],
+            contents: [{ parts: [{ text: 'Respond with: READY' }] }],
             generationConfig: { maxOutputTokens: 5 }
           })
         });
@@ -136,14 +190,14 @@ export class GeminiService {
         return { success: false, model: modelToUse, message: errMsg, latencyMs };
       }
 
-      this.apiKey = key;
+      this.apiKey = cleanKey;
       this.activeModel = modelToUse;
-      localStorage.setItem('GEMINI_API_KEY', key);
+      localStorage.setItem('GEMINI_API_KEY', cleanKey);
 
       return {
         success: true,
         model: modelToUse,
-        message: `Successfully connected to ${modelToUse} (${latencyMs}ms)`,
+        message: `Connected to ${modelToUse} (${latencyMs}ms)`,
         latencyMs
       };
     } catch (err: any) {
@@ -170,7 +224,7 @@ export class GeminiService {
   }
 
   /**
-   * Send live camera frame directly to Google Gemini Multimodal Vision API
+   * Send live camera frame to Google Gemini Multimodal Vision API
    * Interprets any sign language gesture (1 or 2 hands) without hardcoded dictionary!
    */
   public async interpretFrame(
@@ -185,7 +239,7 @@ export class GeminiService {
         intent: 'Busy',
         confidence: 0,
         latencyMs: 0,
-        source: this.activeModel as any,
+        source: this.activeModel,
         error: 'Concurrent call blocked'
       };
     }
@@ -211,9 +265,8 @@ export class GeminiService {
     try {
       const base64Data = this.captureFrameBase64(source);
 
-      const prompt = `You are the core assistive communication voice for a non-verbal person communicating through sign language and hand gestures in front of the camera.
-You are seeing their live camera view.
-Active hands detected: ${handContext?.handCount || 1} (${handContext?.handedness || 'in view'}).
+      const prompt = `You are the assistive communication voice for a non-verbal person who is communicating using hand gestures and sign language in front of this camera.
+Active hands visible: ${handContext?.handCount || 1} (${handContext?.handedness || 'in view'}).
 
 Your instructions:
 1. Examine the user's hand shape, finger extensions, palm orientations, and relative positions of BOTH hands (if 2 hands are used).
@@ -250,33 +303,58 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no comm
         }
       };
 
-      let modelInUse = this.activeModel || 'gemini-2.0-flash';
-      let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelInUse}:generateContent?key=${this.apiKey}`;
+      let rawText = '';
+      let modelUsed = this.activeModel || 'gemini-2.0-flash';
 
-      let response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
+      // 1. Try server proxy (immune to COEP / CORS)
+      try {
+        const proxyRes = await fetch('/api/gemini/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey: this.apiKey,
+            model: modelUsed,
+            requestBody
+          })
+        });
 
-      if (!response.ok && response.status === 404 && modelInUse === 'gemini-2.0-flash') {
-        modelInUse = 'gemini-1.5-flash';
-        this.activeModel = modelInUse;
-        endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelInUse}:generateContent?key=${this.apiKey}`;
-        response = await fetch(endpoint, {
+        if (proxyRes.ok) {
+          const proxyData = await proxyRes.json();
+          rawText = proxyData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          if (proxyData._modelInUse) modelUsed = proxyData._modelInUse;
+        }
+      } catch {
+        // Fallback to direct fetch
+      }
+
+      // 2. Direct browser fetch fallback if proxy did not return
+      if (!rawText) {
+        let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelUsed}:generateContent?key=${this.apiKey}`;
+        let response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody)
         });
-      }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `HTTP ${response.status}`);
-      }
+        if (!response.ok && response.status === 404 && modelUsed === 'gemini-2.0-flash') {
+          modelUsed = 'gemini-1.5-flash';
+          this.activeModel = modelUsed;
+          endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelUsed}:generateContent?key=${this.apiKey}`;
+          response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+          });
+        }
 
-      const data = await response.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      }
 
       let parsed: any;
       try {
@@ -298,7 +376,7 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no comm
         intent: parsed.intent || "Assistive Communication",
         confidence: parsed.confidence || 0.95,
         latencyMs: Math.round(t1 - t0),
-        source: modelInUse as any
+        source: modelUsed
       };
 
       this.lastInterpretation = result;
@@ -316,7 +394,7 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no comm
         intent: 'Error',
         confidence: 0,
         latencyMs: Math.round(performance.now() - t0),
-        source: this.activeModel as any,
+        source: this.activeModel,
         error: errMsg
       };
     } finally {

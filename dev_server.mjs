@@ -49,11 +49,29 @@ function rewriteImports(code, filePath) {
   return code;
 }
 
+function sanitizeApiKey(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let cleaned = raw.trim();
+  cleaned = cleaned.replace(/^["'`]|["'`]$/g, '').trim();
+  cleaned = cleaned.replace(/^(?:GEMINI_API_KEY|API_KEY|key)\s*[:=]\s*/i, '').trim();
+  const match = cleaned.match(/AIzaSy[A-Za-z0-9_-]{25,50}/);
+  if (match) return match[0];
+  return cleaned;
+}
+
 const server = http.createServer((req, res) => {
   // Apply COOP and COEP headers for WebAssembly SIMD & SharedArrayBuffer
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
 
   let reqPath = decodeURIComponent(req.url.split('?')[0]);
 
@@ -66,12 +84,12 @@ const server = http.createServer((req, res) => {
       req.on('end', () => {
         try {
           const parsed = JSON.parse(body);
-          const key = (parsed.apiKey || '').trim();
+          const key = sanitizeApiKey(parsed.apiKey);
           if (key) {
             fs.writeFileSync(path.join(__dirname, '.env'), `GEMINI_API_KEY=${key}\n`, 'utf-8');
             process.env.GEMINI_API_KEY = key;
           }
-          res.end(JSON.stringify({ success: true, saved: Boolean(key) }));
+          res.end(JSON.stringify({ success: true, saved: Boolean(key), key }));
         } catch {
           res.statusCode = 400;
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
@@ -84,11 +102,135 @@ const server = http.createServer((req, res) => {
       if (!apiKey && fs.existsSync(envPath)) {
         const envContent = fs.readFileSync(envPath, 'utf-8');
         const match = envContent.match(/GEMINI_API_KEY\s*=\s*([^\s\r\n]+)/);
-        if (match) apiKey = match[1];
+        if (match) apiKey = sanitizeApiKey(match[1]);
       }
       res.end(JSON.stringify({ apiKey }));
       return;
     }
+  }
+
+  // Validate API Key directly with Google Generative AI from Node.js (bypasses browser CORS & COEP)
+  if (reqPath === '/api/gemini/validate' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const parsed = JSON.parse(body);
+        const cleanKey = sanitizeApiKey(parsed.apiKey);
+        if (!cleanKey) {
+          res.end(JSON.stringify({ success: false, message: 'Please enter a valid Gemini API key (starts with AIzaSy...)' }));
+          return;
+        }
+
+        const t0 = Date.now();
+        let modelInUse = 'gemini-2.0-flash';
+        let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelInUse}:generateContent?key=${cleanKey}`;
+
+        let googleRes = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'Respond with: READY' }] }],
+            generationConfig: { maxOutputTokens: 5 }
+          })
+        });
+
+        if (!googleRes.ok && googleRes.status === 404) {
+          modelInUse = 'gemini-1.5-flash';
+          endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelInUse}:generateContent?key=${cleanKey}`;
+          googleRes = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: 'Respond with: READY' }] }],
+              generationConfig: { maxOutputTokens: 5 }
+            })
+          });
+        }
+
+        const latencyMs = Date.now() - t0;
+        const resData = await googleRes.json().catch(() => ({}));
+
+        if (googleRes.ok) {
+          fs.writeFileSync(path.join(__dirname, '.env'), `GEMINI_API_KEY=${cleanKey}\n`, 'utf-8');
+          process.env.GEMINI_API_KEY = cleanKey;
+
+          res.end(JSON.stringify({
+            success: true,
+            model: modelInUse,
+            latencyMs,
+            key: cleanKey,
+            message: `Connected to ${modelInUse} (${latencyMs}ms)`
+          }));
+        } else {
+          const errMsg = resData.error?.message || `Google API returned HTTP ${googleRes.status}`;
+          res.end(JSON.stringify({
+            success: false,
+            model: modelInUse,
+            message: errMsg,
+            code: resData.error?.code || googleRes.status
+          }));
+        }
+      } catch (err) {
+        res.end(JSON.stringify({
+          success: false,
+          message: `Network error connecting to Google: ${err.message}`
+        }));
+      }
+    });
+    return;
+  }
+
+  // Proxy multimodal Gemini interpretation requests (zero browser CORS/COEP issues)
+  if (reqPath === '/api/gemini/generate' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const parsed = JSON.parse(body);
+        let key = sanitizeApiKey(parsed.apiKey) || process.env.GEMINI_API_KEY || '';
+        if (!key && fs.existsSync(path.join(__dirname, '.env'))) {
+          const envContent = fs.readFileSync(path.join(__dirname, '.env'), 'utf-8');
+          const match = envContent.match(/GEMINI_API_KEY\s*=\s*([^\s\r\n]+)/);
+          if (match) key = sanitizeApiKey(match[1]);
+        }
+
+        if (!key) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: { message: 'API key not configured' } }));
+          return;
+        }
+
+        let model = parsed.model || 'gemini-2.0-flash';
+        let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+
+        let googleRes = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed.requestBody)
+        });
+
+        if (!googleRes.ok && googleRes.status === 404 && model === 'gemini-2.0-flash') {
+          model = 'gemini-1.5-flash';
+          endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+          googleRes = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(parsed.requestBody)
+          });
+        }
+
+        const data = await googleRes.json().catch(() => ({}));
+        res.statusCode = googleRes.status;
+        res.end(JSON.stringify({ ...data, _modelInUse: model }));
+      } catch (err) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: { message: err.message } }));
+      }
+    });
+    return;
   }
 
   if (reqPath === '/') reqPath = '/index.html';

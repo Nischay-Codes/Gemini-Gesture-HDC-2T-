@@ -3,7 +3,7 @@ import { HandTracker, LandmarkPoint, SingleHand } from './vision/hand_tracker';
 import { TrajectoryBuffer } from './encoder/trajectory_buffer';
 import { EngineManager } from './recognition/engine_manager';
 import { HandPoseTracker, HandKinematics } from './vision/hand_pose_tracker';
-import { GeminiService, GeminiInterpretation } from './gemini/gemini_service';
+import { GeminiService, GeminiInterpretation, sanitizeApiKey } from './gemini/gemini_service';
 import { TtsService } from './speech/tts_service';
 
 interface CachedReflexSign {
@@ -286,15 +286,22 @@ class SignVoxApp {
    * Connects and verifies Gemini API key from the inline input
    */
   private async handleSaveApiKey(): Promise<void> {
-    const key = this.inputInlineGeminiKey.value.trim();
+    const raw = this.inputInlineGeminiKey.value;
+    const key = sanitizeApiKey(raw);
     if (!key) {
-      alert('Please paste your Google Gemini API key.');
+      alert('Please paste your Google Gemini API key (starts with AIzaSy...).');
       return;
     }
 
-    this.headerKeyStatus.textContent = '🟡 Validating...';
+    // Update input display with cleaned key
+    this.inputInlineGeminiKey.value = key;
+
+    this.headerKeyStatus.textContent = '🟡 Connecting...';
     this.headerKeyStatus.className = 'key-status-pill badge-subtle';
     this.btnSaveInlineKey.disabled = true;
+
+    // Immediately save key to service and localStorage
+    this.geminiService.setApiKey(key);
 
     const res = await this.geminiService.testConnection(key);
     this.btnSaveInlineKey.disabled = false;
@@ -303,13 +310,14 @@ class SignVoxApp {
       this.headerKeyStatus.textContent = `🟢 Connected (${res.latencyMs}ms)`;
       this.headerKeyStatus.className = 'key-status-pill badge-green';
       this.headerKeyStatus.title = res.message;
-      this.geminiStatusBadge.textContent = `✓ Gemini 2.0 Flash Active`;
+      this.geminiStatusBadge.textContent = `✓ ${res.model} Active`;
       this.geminiStatusBadge.className = 'badge badge-green';
       this.ttsService.speak('Google Gemini API connected. Live gesture translation active.', true);
     } else {
-      this.headerKeyStatus.textContent = '🔴 Invalid Key';
+      this.headerKeyStatus.textContent = '🔴 Connection Error';
       this.headerKeyStatus.className = 'key-status-pill badge-red';
-      alert(`Could not connect to Gemini API:\n${res.message}\n\nPlease check your key in Google AI Studio.`);
+      this.headerKeyStatus.title = res.message;
+      alert(`Could not verify Gemini API key:\n\n${res.message}\n\nPlease check your key in Google AI Studio.`);
     }
   }
 
