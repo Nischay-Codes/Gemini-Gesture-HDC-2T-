@@ -457,7 +457,24 @@ body {
 
 .speech-sub {
   font-size: 0.72rem;
-  color: var(--text-secondary);
+.voice-select-dropdown {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  font-family: var(--font-sans);
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  outline: none;
+  cursor: pointer;
+  max-width: 175px;
+  text-overflow: ellipsis;
+  transition: border-color 0.15s;
+}
+
+.voice-select-dropdown:hover, .voice-select-dropdown:focus {
+  border-color: var(--accent-cyan);
 }
 
 /* Audio Visualizer Equalizer Waves */

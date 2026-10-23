@@ -35,6 +35,7 @@ class SignVoxApp {
   private btnRepeatSpeech: HTMLButtonElement;
   private btnToggleVoice: HTMLButtonElement;
   private voiceStatusText: HTMLElement;
+  private selectVoice: HTMLSelectElement | null;
 
   // Sentence Builder
   private sentenceDisplay: HTMLElement;
@@ -43,8 +44,14 @@ class SignVoxApp {
   private btnClearSentence: HTMLButtonElement;
   private btnCopySentence: HTMLButtonElement;
   private sentenceWords: string[] = [];
-  private lastAppendedSign: string = '';
-  private lastAppendTime: number = 0;
+
+  // Temporal Stability & Hysteresis Filter (prevents word spam and flickering)
+  private candidateSignKey: string = '';
+  private candidateSignHoldStart: number = 0;
+  private confirmedSignKey: string = '';
+  private readonly HOLD_DURATION_MS: number = 380; // Must hold gesture steadily for 380ms to confirm
+  private hasSpokenCurrentSign: boolean = false;
+  private neutralHoldCount: number = 0;
 
   // Gemini 2.0 Tier 2
   private btnGeminiTranslate: HTMLButtonElement;
@@ -99,6 +106,7 @@ class SignVoxApp {
     this.btnRepeatSpeech = document.getElementById('btn-repeat-speech') as HTMLButtonElement;
     this.btnToggleVoice = document.getElementById('btn-toggle-voice') as HTMLButtonElement;
     this.voiceStatusText = document.getElementById('voice-status-text')!;
+    this.selectVoice = document.getElementById('select-voice') as HTMLSelectElement | null;
 
     // Sentence Builder
     this.sentenceDisplay = document.getElementById('sentence-display')!;
@@ -175,16 +183,54 @@ class SignVoxApp {
       }
     });
 
-    // 4. Setup Event Handlers
+    // 4. Populate Soothing Female Voice Selector
+    if (this.selectVoice) {
+      this.ttsService.setOnVoicesLoaded((voices, selected) => {
+        if (!this.selectVoice) return;
+        this.selectVoice.innerHTML = '';
+
+        const enVoices = voices.filter(v => v.lang.startsWith('en'));
+        const otherVoices = voices.filter(v => !v.lang.startsWith('en'));
+
+        const sorted = [...enVoices.sort((a, b) => {
+          const aFemale = /samantha|ava|victoria|karen|moira|tessa|serena|zoe|female/i.test(a.name);
+          const bFemale = /samantha|ava|victoria|karen|moira|tessa|serena|zoe|female/i.test(b.name);
+          if (aFemale && !bFemale) return -1;
+          if (!aFemale && bFemale) return 1;
+          return a.name.localeCompare(b.name);
+        }), ...otherVoices];
+
+        sorted.forEach(v => {
+          const opt = document.createElement('option');
+          opt.value = v.name;
+          const isFemale = /samantha|ava|victoria|karen|moira|tessa|serena|zoe|female/i.test(v.name);
+          const icon = isFemale ? '🌸 ' : '🎙️ ';
+          opt.textContent = `${icon}${v.name}`;
+          if (selected && selected.name === v.name) {
+            opt.selected = true;
+          }
+          this.selectVoice?.appendChild(opt);
+        });
+      });
+
+      this.selectVoice.addEventListener('change', () => {
+        if (this.selectVoice?.value) {
+          this.ttsService.setVoiceByName(this.selectVoice.value);
+          this.ttsService.speak('Voice updated.', true);
+        }
+      });
+    }
+
+    // 5. Setup Event Handlers
     this.setupEventListeners();
 
-    // 5. Pre-seed HDC Memory with Canonical Sign Language Hypervectors
+    // 6. Pre-seed HDC Memory with Canonical Sign Language Hypervectors
     this.seedCanonicalHdcMemory();
 
-    // 6. Attempt Start Live Camera (graceful on Safari/Chrome autoplay restrictions)
+    // 7. Attempt Start Live Camera (graceful on Safari/Chrome autoplay restrictions)
     this.startCamera().catch(() => {});
 
-    // 7. Start Render Loop
+    // 8. Start Render Loop
     this.isRunning = true;
     requestAnimationFrame(this.renderLoop.bind(this));
     console.log('SignVox HDC-2T Ready.');
@@ -213,10 +259,7 @@ class SignVoxApp {
       this.btnToggleCam.textContent = 'Connecting...';
       const ok = await this.cameraManager.start(this.videoEl);
       if (ok) {
-        this.videoEl.onloadedmetadata = () => {
-          this.canvasEl.width = this.videoEl.videoWidth || 640;
-          this.canvasEl.height = this.videoEl.videoHeight || 480;
-        };
+        this.syncCanvasResolution();
         this.btnToggleCam.textContent = 'Stop Camera';
         if (prompt) prompt.style.display = 'none';
       } else {
@@ -227,6 +270,29 @@ class SignVoxApp {
       console.warn('Camera start error:', err);
       this.btnToggleCam.textContent = 'Start Camera';
       if (prompt) prompt.style.display = 'flex';
+    }
+  }
+
+  /**
+   * Synchronizes canvas internal pixel resolution 1:1 with displayed video dimensions,
+   * completely eliminating blurry upscaling and oversized joint drawings.
+   */
+  private syncCanvasResolution(): void {
+    const rect = this.videoEl.getBoundingClientRect();
+    if (rect.width > 20 && rect.height > 20) {
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      if (this.canvasEl.width !== w || this.canvasEl.height !== h) {
+        this.canvasEl.width = w;
+        this.canvasEl.height = h;
+      }
+    } else {
+      const vw = this.videoEl.videoWidth || 640;
+      const vh = this.videoEl.videoHeight || 480;
+      if (this.canvasEl.width !== vw || this.canvasEl.height !== vh) {
+        this.canvasEl.width = vw;
+        this.canvasEl.height = vh;
+      }
     }
   }
 
@@ -259,6 +325,11 @@ class SignVoxApp {
       if (this.cameraStage) {
         this.cameraStage.classList.toggle('mirrored', this.isMirrored);
       }
+    });
+
+    // Window resize observer to keep canvas sharp
+    window.addEventListener('resize', () => {
+      this.syncCanvasResolution();
     });
 
     // Speech Controls
@@ -418,6 +489,9 @@ class SignVoxApp {
   private renderLoop(timestamp: number): void {
     if (!this.isRunning) return;
 
+    // Ensure canvas stays synchronized with actual video client dimensions
+    this.syncCanvasResolution();
+
     // 1. Detect Hand Skeletons (1 or 2 hands)
     const isLive = this.cameraManager.isStreaming();
     const detection = this.handTracker.detectHand(this.videoEl, timestamp, isLive);
@@ -433,13 +507,12 @@ class SignVoxApp {
         this.trackingStatusBadge.textContent = `MediaPipe 3D: 1 Hand (${detection.handedness} • 60 FPS)`;
       }
 
-      // Draw crisp 3D skeletons for ALL active hands (Right in Cyan, Left in Purple)
+      // Draw sleek, delicate 3D skeletons for ALL active hands (Right in Cyan, Left in Purple)
       this.handTracker.drawSkeleton(this.ctx, detection.hands, this.canvasEl.width, this.canvasEl.height);
 
       // Encode into HDC trajectory buffer (if 2 hands, combines centroids & inter-hand vectors)
       const primaryHand = detection.hands[0].landmarks;
       if (detection.hands.length >= 2) {
-        // Combined 2-hand composite representation for HDC
         const h1 = detection.hands[0].landmarks;
         const h2 = detection.hands[1].landmarks;
         const composite: LandmarkPoint[] = [];
@@ -455,16 +528,48 @@ class SignVoxApp {
         this.trajectoryBuffer.addFrame(primaryHand);
       }
 
-      // 2. Run Robust Sign Language Classifier (Handles 1-Hand AND 2-Hand gestures)
+      // 2. Run Robust Sign Language Classifier
       const sign = SignLanguageRecognizer.recognize(detection.hands);
       this.latestDetectedSign = sign;
+      const now = Date.now();
 
       if (sign) {
-        // Confirmed Sign Recognized!
-        this.updateHudWithSign(sign);
-        this.highlightActiveSignCard(sign.signKey);
+        this.neutralHoldCount = 0;
 
-        // Hardware HDC Latency execution test
+        // Temporal Hold Stability Filter: User must hold the sign steadily for >= 380ms
+        if (sign.signKey === this.candidateSignKey) {
+          const holdElapsed = now - this.candidateSignHoldStart;
+
+          if (holdElapsed >= this.HOLD_DURATION_MS) {
+            const isNewSign = this.confirmedSignKey !== sign.signKey;
+
+            if (isNewSign || !this.hasSpokenCurrentSign) {
+              this.confirmedSignKey = sign.signKey;
+              this.hasSpokenCurrentSign = true;
+
+              // Speak smoothly in soothing female voice
+              this.ttsService.speak(sign.spokenPhrase);
+              this.spokenPhraseText.textContent = `"${sign.spokenPhrase}"`;
+
+              // Calmly append to sentence builder
+              this.appendToSentence(sign.signName.split('/')[0].trim());
+            }
+
+            // Keep HUD updated and active
+            this.updateHudWithSign(sign);
+            this.highlightActiveSignCard(sign.signKey);
+
+            const handsTag = sign.handCount === 2 ? ' • 2-Hand Gesture' : ' • 1-Hand';
+            this.similarityPill.textContent = `${Math.round(sign.confidence * 100)}% Confirmed${handsTag}`;
+            this.similarityPill.className = 'confidence-tag badge-green';
+          }
+        } else {
+          // New gesture candidate, begin steady hold timer
+          this.candidateSignKey = sign.signKey;
+          this.candidateSignHoldStart = now;
+        }
+
+        // Hardware HDC Latency execution
         let latencyUs = 1.15;
         if (this.trajectoryBuffer.isFull()) {
           const flatTraj = this.trajectoryBuffer.getFlattenedTrajectory();
@@ -475,32 +580,25 @@ class SignVoxApp {
         }
         this.liveSignLatency.textContent = `⚡ ${latencyUs.toFixed(2)} μs HDC SIMD`;
 
-        // Real-Time Speech Synthesis: Speaks out loud!
-        this.ttsService.speak(sign.spokenPhrase);
-        this.spokenPhraseText.textContent = `"${sign.spokenPhrase}"`;
-        const handsTag = sign.handCount === 2 ? ' • 2-Hand Gesture' : ' • 1-Hand';
-        this.similarityPill.textContent = `${Math.round(sign.confidence * 100)}% Confirmed${handsTag}`;
-        this.similarityPill.className = 'confidence-tag badge-green';
-
-        // Add to sentence builder
-        const now = Date.now();
-        if (sign.signKey !== this.lastAppendedSign || (now - this.lastAppendTime > 3000)) {
-          this.appendToSentence(sign.signName.split('/')[0].trim());
-          this.lastAppendedSign = sign.signKey;
-          this.lastAppendTime = now;
-        }
       } else {
-        // Resting or transitional hand
-        this.clearActiveSignCards();
-        this.hudSignBadge.className = 'hud-sign-badge';
-        this.liveSignIcon.textContent = detection.handCount >= 2 ? '👐' : '✋';
-        this.liveSignTitle.textContent = detection.handCount >= 2 ? '2 Hands Active (Neutral)' : '1 Hand Active (Neutral)';
-        this.liveSignSub.textContent = 'Awaiting sign language posture...';
-        this.similarityPill.textContent = 'Neutral Hand';
-        this.similarityPill.className = 'confidence-tag badge-subtle';
+        // Resting / Neutral hand
+        this.candidateSignKey = '';
+        this.neutralHoldCount++;
+
+        // When hand is lowered or resting for ~350ms, unlock speech for next gesture
+        if (this.neutralHoldCount > 10) {
+          this.confirmedSignKey = '';
+          this.hasSpokenCurrentSign = false;
+          this.clearActiveSignCards();
+          this.hudSignBadge.className = 'hud-sign-badge';
+          this.liveSignIcon.textContent = detection.handCount >= 2 ? '👐' : '✋';
+          this.liveSignTitle.textContent = detection.handCount >= 2 ? '2 Hands Active (Neutral)' : '1 Hand Active (Neutral)';
+          this.liveSignSub.textContent = 'Awaiting sign language posture...';
+          this.similarityPill.textContent = 'Neutral Hand';
+          this.similarityPill.className = 'confidence-tag badge-subtle';
+        }
 
         // Tier 2: If Auto-Gemini is active and novel sign is sustained
-        const now = Date.now();
         if (this.autoGeminiMode && (now - this.lastGeminiCallTime > 5000)) {
           this.lastGeminiCallTime = now;
           this.triggerGeminiTranslation();
@@ -512,6 +610,10 @@ class SignVoxApp {
         this.ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
         this.trajectoryBuffer.clear();
         this.clearActiveSignCards();
+        this.confirmedSignKey = '';
+        this.hasSpokenCurrentSign = false;
+        this.candidateSignKey = '';
+        this.neutralHoldCount = 0;
         this.hudSignBadge.className = 'hud-sign-badge';
         this.liveSignIcon.textContent = '✋';
         this.liveSignTitle.textContent = 'Awaiting Hand Gesture...';
@@ -626,7 +728,7 @@ class SignVoxApp {
       this.geminiDetectedSign.textContent = res.gestureName;
       this.geminiIntentBadge.textContent = res.intent;
 
-      // Speaks aloud!
+      // Speaks aloud with soothing voice!
       this.ttsService.speak(res.spokenPhrase, true);
       this.spokenPhraseText.textContent = `"${res.spokenPhrase}"`;
 

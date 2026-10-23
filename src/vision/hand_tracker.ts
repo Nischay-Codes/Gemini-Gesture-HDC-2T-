@@ -19,20 +19,20 @@ export interface HandDetectionResult {
   handedness: string;
 }
 
-// Landmark connections for drawing the hand skeleton
+// Sleek, anatomically correct hand skeleton connections (no spiderweb diagonals across palm)
 export const HAND_CONNECTIONS: [number, number][] = [
   // Thumb
   [0, 1], [1, 2], [2, 3], [3, 4],
   // Index
-  [0, 5], [5, 6], [6, 7], [7, 8],
+  [5, 6], [6, 7], [7, 8],
   // Middle
-  [0, 9], [9, 10], [10, 11], [11, 12],
+  [9, 10], [10, 11], [11, 12],
   // Ring
-  [0, 13], [13, 14], [14, 15], [15, 16],
+  [13, 14], [14, 15], [15, 16],
   // Pinky
-  [0, 17], [17, 18], [18, 19], [19, 20],
-  // Palm base
-  [5, 9], [9, 13], [13, 17],
+  [17, 18], [18, 19], [19, 20],
+  // Palm perimeter outline
+  [0, 5], [5, 9], [9, 13], [13, 17], [17, 0]
 ];
 
 export class HandTracker {
@@ -52,10 +52,10 @@ export class HandTracker {
           delegate: 'GPU',
         },
         runningMode: 'VIDEO',
-        numHands: 2, // Enable full 2-hand sign language tracking
-        minHandDetectionConfidence: 0.5,
-        minHandPresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5,
+        numHands: 2,
+        minHandDetectionConfidence: 0.55,
+        minHandPresenceConfidence: 0.55,
+        minTrackingConfidence: 0.55,
       });
 
       this.isReady = true;
@@ -70,7 +70,7 @@ export class HandTracker {
             delegate: 'CPU',
           },
           runningMode: 'VIDEO',
-          numHands: 2, // Dual hand tracking on CPU
+          numHands: 2,
         });
         this.isReady = true;
       } catch (cpuErr) {
@@ -134,9 +134,7 @@ export class HandTracker {
     const t = this.syntheticTime;
     const lms: LandmarkPoint[] = new Array(21).fill(null).map(() => ({ x: 0, y: 0, z: 0 }));
 
-    // Wrist
     lms[0] = { x: 0.5 + Math.sin(t * 1.5) * 0.02, y: 0.8 + Math.cos(t * 1.2) * 0.02, z: 0 };
-    // Middle MCP
     lms[9] = { x: 0.5 + Math.sin(t * 1.5) * 0.02, y: 0.45 + Math.cos(t * 1.2) * 0.02, z: 0 };
 
     if (this.syntheticPose === 'thumbs_up') {
@@ -150,7 +148,6 @@ export class HandTracker {
         lms[id] = { x: 0.44 + fIdx * 0.06, y: 0.48 + j * 0.02, z: -0.04 };
       }
     } else {
-      // Open hand
       for (let id = 1; id < 21; id++) {
         const fIdx = Math.floor((id - 1) / 4);
         const j = (id - 1) % 4;
@@ -168,20 +165,18 @@ export class HandTracker {
   }
 
   /**
-   * Draws all detected hands with distinct color themes for Right vs Left hand
+   * Draws a sleek, refined, modern holographic skeleton overlay (not bulky or bloated)
    */
   public drawSkeleton(
     ctx: CanvasRenderingContext2D,
     input: LandmarkPoint[] | SingleHand[],
     width: number,
-    height: number,
-    corruptedIndices?: Set<number>
+    height: number
   ): void {
     ctx.clearRect(0, 0, width, height);
 
     if (!input || (input as any).length === 0) return;
 
-    // Normalize input to an array of SingleHand
     const handsToDraw: SingleHand[] = (input[0] && 'landmarks' in input[0])
       ? (input as SingleHand[])
       : [{ landmarks: input as LandmarkPoint[], handedness: 'Right' }];
@@ -191,31 +186,16 @@ export class HandTracker {
       if (!landmarks || landmarks.length < 21) return;
 
       const isRightHand = hand.handedness === 'Right' || hIdx === 0;
-      const boneStrokeColor = isRightHand ? 'rgba(56, 189, 248, 0.85)' : 'rgba(168, 85, 247, 0.85)';
-      const boneShadowColor = isRightHand ? 'rgba(56, 189, 248, 0.5)' : 'rgba(168, 85, 247, 0.5)';
-      const palmFillColor = isRightHand ? 'rgba(56, 189, 248, 0.06)' : 'rgba(168, 85, 247, 0.06)';
-      const nodeRingColor = isRightHand ? 'rgba(56, 189, 248, 0.95)' : 'rgba(168, 85, 247, 0.95)';
+      const boneStrokeColor = isRightHand ? 'rgba(56, 189, 248, 0.75)' : 'rgba(192, 132, 252, 0.75)';
+      const nodeFillColor = isRightHand ? '#38bdf8' : '#c084fc';
+      const wristAnchorColor = isRightHand ? '#10b981' : '#a855f7';
 
-      // 1. Palm Sub-surface Triangle
-      const wrist = landmarks[0];
-      const indexMcp = landmarks[5];
-      const pinkyMcp = landmarks[17];
-      ctx.beginPath();
-      ctx.moveTo(wrist.x * width, wrist.y * height);
-      ctx.lineTo(indexMcp.x * width, indexMcp.y * height);
-      ctx.lineTo(pinkyMcp.x * width, pinkyMcp.y * height);
-      ctx.closePath();
-      ctx.fillStyle = palmFillColor;
-      ctx.fill();
-
-      // 2. Skeletal Bones
+      // 1. Sleek Laser Bone Lines (clean 1.1px stroke, zero blurry shadow)
       ctx.save();
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = 1.2;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.strokeStyle = boneStrokeColor;
-      ctx.shadowColor = boneShadowColor;
-      ctx.shadowBlur = 4;
 
       for (const [start, end] of HAND_CONNECTIONS) {
         const p1 = landmarks[start];
@@ -227,7 +207,7 @@ export class HandTracker {
       }
       ctx.restore();
 
-      // 3. Precision Optical Tracking Joints
+      // 2. Refined Precision Tracking Micro-Nodes (small, crisp, elegant)
       const tipIndices = new Set([4, 8, 12, 16, 20]);
 
       for (let i = 0; i < landmarks.length; i++) {
@@ -236,56 +216,56 @@ export class HandTracker {
         const py = pt.y * height;
 
         if (i === 0) {
-          // Wrist Anchor node
+          // Wrist Anchor: small 2.5px crisp reticle
           ctx.beginPath();
-          ctx.arc(px, py, 4.5, 0, 2 * Math.PI);
-          ctx.strokeStyle = isRightHand ? '#10b981' : '#a855f7';
-          ctx.lineWidth = 1.4;
+          ctx.arc(px, py, 2.8, 0, 2 * Math.PI);
+          ctx.strokeStyle = wristAnchorColor;
+          ctx.lineWidth = 1.0;
           ctx.stroke();
 
           ctx.beginPath();
-          ctx.arc(px, py, 2.0, 0, 2 * Math.PI);
+          ctx.arc(px, py, 1.2, 0, 2 * Math.PI);
           ctx.fillStyle = '#ffffff';
           ctx.fill();
 
-          // Handedness HUD Tag above wrist
+          // Handedness pill tag above wrist
           ctx.save();
-          ctx.font = '700 9px "JetBrains Mono", monospace';
+          ctx.font = '600 9px "JetBrains Mono", monospace';
           ctx.fillStyle = isRightHand ? '#38bdf8' : '#c084fc';
-          ctx.fillText(hand.handedness.toUpperCase(), px - 14, py + 14);
+          ctx.fillText(hand.handedness.toUpperCase(), px - 10, py + 12);
           ctx.restore();
         } else if (tipIndices.has(i)) {
-          // Fingertips
+          // Fingertip Micro-Reticles: small 2.2px crisp outer ring + tiny white center dot
           ctx.beginPath();
-          ctx.arc(px, py, 3.8, 0, 2 * Math.PI);
-          ctx.strokeStyle = nodeRingColor;
-          ctx.lineWidth = 1.2;
+          ctx.arc(px, py, 2.2, 0, 2 * Math.PI);
+          ctx.strokeStyle = nodeFillColor;
+          ctx.lineWidth = 0.9;
           ctx.stroke();
 
           ctx.beginPath();
-          ctx.arc(px, py, 1.8, 0, 2 * Math.PI);
+          ctx.arc(px, py, 1.0, 0, 2 * Math.PI);
           ctx.fillStyle = '#ffffff';
           ctx.fill();
         } else {
-          // Intermediate Knuckles
+          // Intermediate Finger Knuckles: tiny 1.2px clean dot
           ctx.beginPath();
-          ctx.arc(px, py, 2.0, 0, 2 * Math.PI);
-          ctx.fillStyle = '#f8fafc';
+          ctx.arc(px, py, 1.2, 0, 2 * Math.PI);
+          ctx.fillStyle = 'rgba(248, 250, 252, 0.85)';
           ctx.fill();
         }
       }
     });
 
-    // If both hands are active, draw a subtle glowing connection line between wrists
+    // If both hands are active, draw a delicate connecting indicator line
     if (handsToDraw.length >= 2) {
       const w1 = handsToDraw[0].landmarks[0];
       const w2 = handsToDraw[1].landmarks[0];
       const d = Math.hypot(w1.x - w2.x, w1.y - w2.y);
       if (d < 0.35) {
         ctx.save();
-        ctx.setLineDash([4, 4]);
-        ctx.strokeStyle = 'rgba(245, 158, 11, 0.45)';
-        ctx.lineWidth = 1.0;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.35)';
+        ctx.lineWidth = 0.8;
         ctx.beginPath();
         ctx.moveTo(w1.x * width, w1.y * height);
         ctx.lineTo(w2.x * width, w2.y * height);
