@@ -3,3 +3,5 @@ dist/
 dist-js/
 .DS_Store
 *.log
+.env
+*.env

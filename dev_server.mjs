@@ -60,9 +60,6 @@ function sanitizeApiKey(raw) {
 }
 
 const server = http.createServer((req, res) => {
-  // Apply COOP and COEP headers for WebAssembly SIMD & SharedArrayBuffer
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');

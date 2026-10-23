@@ -143,7 +143,8 @@ export class GeminiService {
             message: data.message || `Connected to ${this.activeModel}`,
             latencyMs: data.latencyMs || Math.round(performance.now() - t0)
           };
-        } else {
+        } else if (!data.message?.includes('Network error') && !data.message?.includes('fetch failed')) {
+          // If Google explicitly rejected the key (e.g. bad key, quota)
           return {
             success: false,
             model: data.model || 'gemini-2.0-flash',
