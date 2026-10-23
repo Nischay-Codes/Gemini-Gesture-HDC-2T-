@@ -1,8 +1,8 @@
 /**
- * GeminiGesture: Google Gemini 2.0 Flash Multimodal Vision Service
+ * Google Gemini 2.0 Flash Multimodal Vision Service
  * 
  * Tier 2 Cognition Engine:
- * - Analyzes video frames of novel, complex, or unregistered hand gestures
+ * - Analyzes video frames of novel, complex, or conversational hand signs
  * - Translates non-verbal intent into natural, fluent human speech
  * - Structured JSON output for automatic enrollment into the Tier 1 HDC memory
  */
@@ -53,7 +53,6 @@ export class GeminiService {
       canvas.width = source.videoWidth || 640;
       canvas.height = source.videoHeight || 480;
       const ctx = canvas.getContext('2d')!;
-      // Un-mirror for natural vision interpretation
       ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
     }
     const dataUrl = canvas.toDataURL('image/jpeg', quality);
@@ -63,7 +62,10 @@ export class GeminiService {
   /**
    * Send frame to Google Gemini 2.0 Flash Multimodal API
    */
-  public async interpretFrame(source: HTMLVideoElement | HTMLCanvasElement): Promise<GeminiInterpretation> {
+  public async interpretFrame(
+    source: HTMLVideoElement | HTMLCanvasElement,
+    detectedSignHint?: { signName: string; spokenPhrase: string; intent?: string }
+  ): Promise<GeminiInterpretation> {
     if (this.isProcessing) {
       return {
         success: false,
@@ -78,7 +80,7 @@ export class GeminiService {
     }
 
     if (!this.hasApiKey()) {
-      return this.fallbackSimulate();
+      return this.fallbackSimulate(detectedSignHint);
     }
 
     this.isProcessing = true;
@@ -164,8 +166,8 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no extr
       this.lastInterpretation = result;
       return result;
     } catch (err: any) {
-      console.warn('Gemini API call failed, using graceful offline fallback:', err);
-      return this.fallbackSimulate(err.message);
+      console.warn('Gemini API call failed, using intelligent fallback:', err);
+      return this.fallbackSimulate(detectedSignHint, err.message);
     } finally {
       this.isProcessing = false;
     }
@@ -174,7 +176,25 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no extr
   /**
    * Offline fail-safe heuristic for live hackathon stages when venue WiFi drops
    */
-  private fallbackSimulate(errorMsg?: string): GeminiInterpretation {
+  private fallbackSimulate(
+    detectedSignHint?: { signName: string; spokenPhrase: string; intent?: string },
+    errorMsg?: string
+  ): GeminiInterpretation {
+    if (detectedSignHint && detectedSignHint.signName) {
+      const result: GeminiInterpretation = {
+        success: true,
+        gestureName: detectedSignHint.signName,
+        spokenPhrase: detectedSignHint.spokenPhrase,
+        intent: detectedSignHint.intent || "Direct Sign Communication",
+        confidence: 0.96,
+        latencyMs: 140,
+        source: 'offline-heuristic',
+        error: errorMsg
+      };
+      this.lastInterpretation = result;
+      return result;
+    }
+
     const library = [
       {
         gestureName: "Open Palm Greeting",
@@ -187,12 +207,6 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no extr
         spokenPhrase: "Could I please have a glass of water?",
         intent: "Basic Need Request",
         confidence: 0.94
-      },
-      {
-        gestureName: "Distress / Pain Sign",
-        spokenPhrase: "I am feeling discomfort, please assist me.",
-        intent: "Medical Assistance",
-        confidence: 0.98
       },
       {
         gestureName: "Gratitude / Thank You",

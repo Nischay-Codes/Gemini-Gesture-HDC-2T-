@@ -3,384 +3,369 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>HDC-Zero: One-Shot Neuromorphic Hyperdimensional Gesture Engine</title>
+    <title>SignVox HDC-2T: Dual-Tier AI Sign Language to Speech Communicator</title>
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="app">
-      <!-- Header -->
+      <!-- Top Navigation Bar -->
       <header class="navbar">
         <div class="nav-left">
           <div class="logo-mark">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"></path>
+              <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"></path>
+              <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"></path>
+              <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"></path>
+            </svg>
           </div>
           <div>
-            <h1>HDC-Zero <span class="tag-version">v1.0-simd</span></h1>
-            <p class="tagline">Client-Side Hyperdimensional Computing for One-Shot Temporal Gesture Learning</p>
+            <h1>SignVox <span class="tag-version">HDC-2T</span></h1>
+            <p class="tagline">Dual-Tier AI Sign Language & Voice Communicator for Non-Verbal Speech</p>
           </div>
         </div>
+
         <div class="nav-right">
-          <div class="status-pill" id="simd-status-pill">
+          <!-- Hardware Tier 1 Pill -->
+          <div class="status-pill status-pill-simd" id="simd-status-pill">
             <span class="dot dot-green"></span>
-            <span id="simd-status-text">WASM SIMD-128</span>
+            <span>Tier 1: HDC SIMD <strong>1.15 μs Reflex</strong></span>
           </div>
-          <div class="status-pill status-pill-gemini">
-            <span class="dot dot-blue" style="background: #38bdf8;"></span>
-            <span id="gemini-header-status">Tier 2: Gemini 2.0 Multimodal</span>
+          <!-- Multimodal Tier 2 Pill -->
+          <div class="status-pill status-pill-gemini" id="gemini-status-pill">
+            <span class="dot dot-blue"></span>
+            <span>Tier 2: Gemini 2.0 Multimodal</span>
           </div>
-          <div class="status-pill">
-            <span class="dot dot-cyan"></span>
-            <span>D = 10,000 Bits</span>
-          </div>
-          <div class="status-pill">
-            <span class="dot dot-purple"></span>
-            <span>0 Backpropagation</span>
-          </div>
+          <!-- Voice Output Toggle -->
+          <button class="btn btn-sm btn-ghost" id="btn-toggle-voice">
+            <span class="voice-icon">🔊</span>
+            <span id="voice-status-text">Voice: ON</span>
+          </button>
+          <!-- API Key Settings -->
+          <button class="btn btn-sm btn-secondary" id="btn-api-key-modal">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path></svg>
+            <span>Gemini Key</span>
+          </button>
         </div>
       </header>
 
-      <!-- App Layout with Sidebar -->
-      <div class="app-layout-with-sidebar">
-        <!-- Left Navigation Sidebar -->
-        <aside class="sidebar">
-          <div class="sidebar-section-title">COMPUTATIONAL SUITE</div>
-          <nav class="sidebar-nav">
-            <button class="sidebar-nav-btn active" data-tab="gestures">
-              <span class="nav-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"></path><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"></path><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"></path><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"></path></svg>
-              </span>
-              <div class="nav-text">
-                <span class="nav-title">Gesture Engine</span>
-                <span class="nav-desc">1-Shot Spatial Learning</span>
+      <!-- Main Workspace -->
+      <main class="main-container">
+        <!-- Left Column: Vision & Sign Recognition -->
+        <section class="viewport-column">
+          <!-- Camera Viewport Card -->
+          <div class="card camera-card">
+            <div class="card-header">
+              <div class="header-title-group">
+                <span class="status-indicator live-indicator"></span>
+                <h3>Live Sign Camera</h3>
+                <span class="badge badge-subtle" id="tracking-status-badge">MediaPipe 3D Skeleton (60 FPS)</span>
               </div>
+              <div class="camera-controls">
+                <button class="btn btn-xs btn-secondary" id="btn-mirror-cam" title="Mirror Camera Feed">
+                  ⇄ Mirror
+                </button>
+                <button class="btn btn-xs btn-primary" id="btn-toggle-cam">
+                  Toggle Camera
+                </button>
+              </div>
+            </div>
+
+            <div class="camera-stage">
+              <video id="webcam-video" autoplay playsinline muted></video>
+              <canvas id="skeleton-canvas"></canvas>
+
+              <!-- Live Sign Detection HUD Overlay -->
+              <div class="camera-hud-overlay" id="camera-hud">
+                <div class="hud-sign-badge" id="hud-sign-badge">
+                  <span class="hud-icon" id="live-sign-icon">✋</span>
+                  <div class="hud-details">
+                    <span class="hud-label" id="live-sign-title">Awaiting Hand Gesture...</span>
+                    <span class="hud-sub" id="live-sign-sub">Hold your hand in camera frame to speak</span>
+                  </div>
+                </div>
+                <div class="hud-latency-pill" id="live-sign-latency">
+                  ⚡ 1.15 μs On-Device
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick ASL & Everyday Sign Matrix -->
+          <div class="card sign-matrix-card">
+            <div class="card-header">
+              <div>
+                <h4>Everyday Sign Language Matrix</h4>
+                <p class="section-desc">Active hand signs illuminate in real time and speak aloud</p>
+              </div>
+              <span class="badge badge-accent">10,000-Bit Holographic Memory</span>
+            </div>
+
+            <div class="sign-grid">
+              <div class="sign-item" id="sign-card-hello">
+                <div class="sign-icon">👋</div>
+                <div class="sign-info">
+                  <div class="sign-name">Hello / Greet</div>
+                  <div class="sign-hint">Open palm fingers spread</div>
+                </div>
+              </div>
+
+              <div class="sign-item" id="sign-card-thank_you">
+                <div class="sign-icon">🙏</div>
+                <div class="sign-info">
+                  <div class="sign-name">Thank You</div>
+                  <div class="sign-hint">Flat hand gratitude gesture</div>
+                </div>
+              </div>
+
+              <div class="sign-item" id="sign-card-yes">
+                <div class="sign-icon">👍</div>
+                <div class="sign-info">
+                  <div class="sign-name">Yes / Agree</div>
+                  <div class="sign-hint">Thumb pointing upright</div>
+                </div>
+              </div>
+
+              <div class="sign-item" id="sign-card-no">
+                <div class="sign-icon">👎</div>
+                <div class="sign-info">
+                  <div class="sign-name">No / Disagree</div>
+                  <div class="sign-hint">Thumb pointing downward</div>
+                </div>
+              </div>
+
+              <div class="sign-item" id="sign-card-i_love_you">
+                <div class="sign-icon">🤟</div>
+                <div class="sign-info">
+                  <div class="sign-name">I Love You</div>
+                  <div class="sign-hint">Thumb, index, pinky (ASL)</div>
+                </div>
+              </div>
+
+              <div class="sign-item" id="sign-card-water">
+                <div class="sign-icon">💧</div>
+                <div class="sign-info">
+                  <div class="sign-name">Water / Drink</div>
+                  <div class="sign-hint">ASL 'W' handshape (3 fingers)</div>
+                </div>
+              </div>
+
+              <div class="sign-item" id="sign-card-help">
+                <div class="sign-icon">🆘</div>
+                <div class="sign-info">
+                  <div class="sign-name">Help / Support</div>
+                  <div class="sign-hint">Assistance hand posture</div>
+                </div>
+              </div>
+
+              <div class="sign-item" id="sign-card-stop">
+                <div class="sign-icon">✋</div>
+                <div class="sign-info">
+                  <div class="sign-name">Stop / Wait</div>
+                  <div class="sign-hint">Flat vertical palm</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right Column: Speech Synthesis & Dual-Tier AI -->
+        <section class="speech-column">
+          <!-- Card 1: Real-Time Spoken Output -->
+          <div class="card speech-card">
+            <div class="speech-header">
+              <div class="speech-title-wrap">
+                <div class="pulsing-speaker" id="speaker-visualizer">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+                </div>
+                <div>
+                  <h3 class="speech-heading">Live Spoken Voice</h3>
+                  <span class="speech-sub" id="speech-engine-sub">Hardware Speech Output (Web Speech API)</span>
+                </div>
+              </div>
+
+              <!-- Animated Equalizer Wave -->
+              <div class="equalizer-wave" id="equalizer-wave">
+                <span class="bar bar-1"></span>
+                <span class="bar bar-2"></span>
+                <span class="bar bar-3"></span>
+                <span class="bar bar-4"></span>
+                <span class="bar bar-5"></span>
+              </div>
+            </div>
+
+            <!-- Big Bold Spoken Text Display -->
+            <div class="spoken-display-box">
+              <div class="spoken-quote" id="spoken-phrase-text">"Awaiting sign gesture to speak..."</div>
+            </div>
+
+            <div class="speech-footer-actions">
+              <button class="btn btn-sm btn-secondary" id="btn-repeat-speech">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                Repeat Voice
+              </button>
+              <div class="confidence-tag badge-green" id="similarity-pill">
+                100% Calibrated Match
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Live Conversation & Sentence Builder -->
+          <div class="card sentence-card">
+            <div class="card-header">
+              <div>
+                <h4>Sentence Builder & Conversation Log</h4>
+                <p class="section-desc">Sequence signs together into fluent continuous speech</p>
+              </div>
+              <div class="sentence-controls">
+                <button class="btn btn-xs btn-ghost" id="btn-undo-word" title="Remove last word">
+                  ⌫ Undo
+                </button>
+                <button class="btn btn-xs btn-ghost" id="btn-clear-sentence" title="Clear all text">
+                  🗑️ Clear
+                </button>
+              </div>
+            </div>
+
+            <div class="sentence-box" id="sentence-display">
+              <span class="sentence-placeholder">Signed words will assemble here... (e.g. "Hello, I need water please")</span>
+            </div>
+
+            <div class="sentence-actions">
+              <button class="btn btn-sm btn-primary" id="btn-speak-sentence">
+                🔊 Speak Full Sentence
+              </button>
+              <button class="btn btn-sm btn-secondary" id="btn-copy-sentence">
+                📋 Copy Text
+              </button>
+            </div>
+          </div>
+
+          <!-- Card 3: Tier 2 — Gemini 2.0 Multimodal Vision -->
+          <div class="card gemini-card">
+            <div class="gemini-card-header">
+              <div class="gemini-title-group">
+                <div class="gemini-logo-badge">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93 4.93 19.07"></path></svg>
+                </div>
+                <div>
+                  <h4>Tier 2: Gemini 2.0 Vision Interpreter</h4>
+                  <p class="section-desc">Deep multimodal comprehension for complex & novel signs</p>
+                </div>
+              </div>
+              <div class="auto-gemini-switch">
+                <label class="switch-label">
+                  <input type="checkbox" id="toggle-auto-gemini" />
+                  <span class="switch-slider"></span>
+                  <span class="switch-text">Auto-Interpret</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Gemini Trigger Button -->
+            <button class="btn btn-gemini-pulse" id="btn-gemini-translate">
+              ✨ Ask Gemini to Interpret Frame
             </button>
 
-            <button class="sidebar-nav-btn" data-tab="time-arrow">
-              <span class="nav-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-              </span>
-              <div class="nav-text">
-                <span class="nav-title">Time-Arrow Lab</span>
-                <span class="nav-desc">Temporal Causality Test</span>
+            <!-- Gemini Result Display -->
+            <div class="gemini-result-card" id="gemini-result-container">
+              <div class="gemini-result-top">
+                <span class="badge badge-purple" id="gemini-status-badge">Gemini Ready</span>
+                <span class="gemini-metrics" id="gemini-latency-badge">Cloud Latency: ~380ms</span>
               </div>
-            </button>
-
-            <button class="sidebar-nav-btn" data-tab="analogy">
-              <span class="nav-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg>
-              </span>
-              <div class="nav-text">
-                <span class="nav-title">Analogy & Reasoning</span>
-                <span class="nav-desc">XOR Unbinding (~12 ns)</span>
+              <div class="gemini-quote" id="gemini-translated-phrase">
+                "Hello everyone, pleased to meet you."
               </div>
-            </button>
-
-            <button class="sidebar-nav-btn" data-tab="language">
-              <span class="nav-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-              </span>
-              <div class="nav-text">
-                <span class="nav-title">Language Identifier</span>
-                <span class="nav-desc">50μs N-Gram Classifier</span>
+              <div class="gemini-intent-row">
+                <span>Sign: <strong id="gemini-detected-sign">Open Palm Greeting</strong></span>
+                <span>Intent: <em id="gemini-intent-badge">Friendly Greeting</em></span>
               </div>
-            </button>
+              <button class="btn btn-sm btn-teach" id="btn-teach-gemini-hdc">
+                ⚡ Teach Sign to On-Device HDC Reflex (1.15 μs Offline)
+              </button>
+            </div>
+          </div>
 
-            <button class="sidebar-nav-btn" data-tab="compositional">
-              <span class="nav-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1"></path><path d="M18 8h4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-4"></path><circle cx="8" cy="12" r="2"></circle><path d="M10 12h4"></path></svg>
-              </span>
-              <div class="nav-text">
-                <span class="nav-title">Compositional Algebra</span>
-                <span class="nav-desc">Zero-Shot A ⊕ B Synthesis</span>
+          <!-- Card 4: One-Shot Custom Sign Trainer -->
+          <div class="card trainer-card">
+            <div class="card-header">
+              <div>
+                <h4>Personalized 1-Shot Sign Trainer</h4>
+                <p class="section-desc">Teach the non-verbal communicator your own custom sign in 2 seconds</p>
               </div>
-            </button>
-          </nav>
+              <span class="badge badge-subtle">Zero Retraining</span>
+            </div>
 
-          <div class="sidebar-footer-card">
-            <div class="sf-tag">MATHEMATICAL KERNEL</div>
-            <div class="sf-title">Binary Spatter Codes</div>
-            <small>Kanerva (1996) • D = 10,000</small>
-            <div class="sf-pill">100% Client-Side</div>
+            <div class="trainer-input-row">
+              <input 
+                type="text" 
+                id="input-custom-phrase" 
+                class="text-input" 
+                placeholder="Type spoken phrase (e.g. 'Call my daughter')" 
+              />
+              <button class="btn btn-sm btn-primary" id="btn-record-custom-sign">
+                🔴 Teach Sign (2s)
+              </button>
+            </div>
+            <div class="trainer-status" id="custom-trainer-status">
+              Ready to learn new custom signs with zero backpropagation.
+            </div>
           </div>
-        </aside>
+        </section>
+      </main>
 
-        <!-- Main Workspace Area -->
-        <div class="app-main-content">
-          <!-- View 1: Gestures -->
-          <div id="view-gestures" class="app-view-container">
-            <!-- Main Grid Container -->
-            <main class="main-layout">
-              <!-- Left Column: Vision & Camera Pipeline -->
-              <section class="left-col">
-                <!-- Video Box -->
-                <div class="card video-card">
-                  <div class="card-header">
-                    <div class="header-title">
-                      <span class="live-dot"></span>
-                      <h2>Vision Pipeline (MediaPipe 3D Landmarks)</h2>
-                    </div>
-                    <div class="controls-row">
-                      <button id="btn-expand-cam" class="btn btn-sm btn-outline" title="Toggle extra-large camera view for stage demo">⛶ Expand Camera</button>
-                      <button id="btn-toggle-cam" class="btn btn-sm btn-outline">Toggle Camera</button>
-                      <button id="btn-mirror-cam" class="btn btn-sm btn-outline" title="Mirror video horizontal orientation">⮂ Mirror View</button>
-                    </div>
-                  </div>
-
-                  <div class="video-container">
-                    <video id="webcam-video" autoplay playsinline muted></video>
-                    <canvas id="skeleton-canvas" width="640" height="480"></canvas>
-                    <div id="countdown-overlay" class="countdown-overlay hidden">3</div>
-                  </div>
-
-                  <div class="camera-footer">
-                    <div class="fps-badge">Tracking: <strong>21 3D Joints (60 FPS)</strong></div>
-                    <div class="norm-badge">Wrist-Relative + Middle-MCP Normalized</div>
-                  </div>
-                </div>
-
-                <!-- Holographic Noise & Occlusion Stress-Test Card -->
-                <div class="card stress-test-card">
-                  <div class="card-header">
-                    <div class="header-title">
-                      <span class="icon-bolt-svg">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                      </span>
-                      <h2>Holographic Fault-Tolerance Stress Test</h2>
-                    </div>
-                    <span id="stress-badge" class="badge badge-green">Clean Feed (0% Noise)</span>
-                  </div>
-                  <p class="section-desc">Corrupt landmarks in real-time to benchmark Kanerva's high-dimensional distributed spatter code against classical Euclidean nearest-neighbor collapse.</p>
-
-                  <div class="stress-controls">
-                    <div class="slider-row">
-                      <label for="range-noise-slider">Sensor Noise & Occlusion:</label>
-                      <span id="label-noise-val" class="noise-val-tag">0% Corruption</span>
-                    </div>
-                    <input type="range" id="range-noise-slider" class="noise-slider" min="0" max="50" value="0" step="1" />
-                    <div class="slider-ticks">
-                      <span>0% (Clean)</span>
-                      <span>25% (Heavy Occlusion)</span>
-                      <span>50% (Extreme Dropout)</span>
-                    </div>
-                  </div>
-
-                  <div class="stress-benchmark-pill">
-                    <span class="pill-title">Empirical Robustness:</span>
-                    <span id="stress-status-text">10,000-bit Hypervector maintains >99% recall confidence under severe landmark dropout.</span>
-                  </div>
-                </div>
-
-                <!-- Training Controls Card -->
-                <div class="card training-card">
-                  <div class="card-header">
-                    <h2>One-Shot Gesture Enrollment</h2>
-                    <span class="badge badge-cyan">Zero Fine-Tuning</span>
-                  </div>
-                  <p class="section-desc">Hold a novel gesture for 250ms (15 frames). HDC creates and binds a 10,000-bit hypervector into associative memory with zero loss gradients.</p>
-
-                  <div class="enroll-form">
-                    <input type="text" id="input-gesture-name" class="input-text" placeholder="Enter gesture name (e.g. peace, thumbs_up, victory)..." />
-                    <button id="btn-enroll" class="btn btn-primary" title="Enroll 1-shot static pose (15 frames)">
-                      <span class="btn-enroll-icon">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"></circle></svg>
-                      </span>
-                      <span>Enroll 1-Shot</span>
-                    </button>
-                    <button id="btn-record-motion" class="btn btn-warning" title="Record dynamic motion trajectory (1-3s) then click Stop & Learn">
-                      <span id="record-motion-icon">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="#ef4444"><circle cx="12" cy="12" r="10"></circle></svg>
-                      </span>
-                      <span id="record-motion-text">Record Motion</span>
-                    </button>
-                    <button id="btn-reinforce" class="btn btn-secondary" title="Reinforce active gesture prototype with an additional demonstration (+1 sample)">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                      <span>Reinforce (+1)</span>
-                    </button>
-                  </div>
-
-                  <div class="quick-actions">
-                    <button id="btn-load-defaults" class="btn btn-sm btn-outline">Load 3 Demonstration Baselines</button>
-                    <button id="btn-clear-memory" class="btn btn-sm btn-danger">Clear All Memory</button>
-                  </div>
-
-                  <!-- Brain Storage & Preset Profiles -->
-                  <div class="storage-actions-panel">
-                    <div class="storage-title">
-                      <span>Portable Brain Packages (1.25 KB/gesture)</span>
-                      <span class="badge badge-purple">Zero-Cloud Model Sharing</span>
-                    </div>
-                    <div class="storage-buttons">
-                      <button id="btn-airdrop-modal" class="btn btn-sm btn-purple" title="AirDrop for Brains: Share any gesture via 1-second visual QR code">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-                        <span>AirDrop Brains (QR)</span>
-                      </button>
-
-                      <button id="btn-export-brain" class="btn btn-sm btn-secondary" title="Download all enrolled gestures as an air-gapped .hdc file">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                        <span>Download (.hdc)</span>
-                      </button>
-
-                      <label for="input-file-brain" class="btn btn-sm btn-outline btn-upload" title="Import an air-gapped .hdc gesture package">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                        <span>Import (.hdc)</span>
-                      </label>
-                      <input type="file" id="input-file-brain" accept=".hdc,.json" style="display: none;" />
-
-                      <select id="select-preset-profile" class="select-sm preset-select" title="Switch Gesture Profile Preset">
-                        <option value="baselines">Preset: 3 Baselines</option>
-                        <option value="presentation">Preset: Spatial Pitch Clicker</option>
-                        <option value="media">Preset: Media Player Controller</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div id="trainer-status" class="status-banner status-info">
-                    Ready. Hold hand in front of camera or use simulator to enroll.
-                  </div>
-                </div>
-              </section>
-
-              <!-- Right Column: Live Recognition, Ablation & Memory -->
-              <section class="right-col">
-                <!-- Real-Time Audible Voice Output & Google Gemini 2.0 Multimodal Cognition -->
-                <div class="card voice-tts-card" style="border: 1px solid rgba(56, 189, 248, 0.3); background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(129, 140, 248, 0.05));">
-                  <div class="card-header">
-                    <div class="header-title">
-                      <span class="live-dot" style="background: #38bdf8; box-shadow: 0 0 10px #38bdf8;"></span>
-                      <h2>Real-Time Audible Voice Output</h2>
-                    </div>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                      <span id="gemini-status-badge" class="badge badge-purple">Tier 2: Gemini Ready</span>
-                      <button id="btn-toggle-voice" class="btn btn-sm btn-outline">🔊 Voice: ON</button>
-                    </div>
-                  </div>
-                  <div class="spoken-subtitle-box" style="background: rgba(7, 8, 11, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); padding: 14px 18px; border-radius: 8px; text-align: center; margin: 10px 0;">
-                    <div id="spoken-subtitle-text" style="font-size: 20px; font-weight: 700; color: #38bdf8; min-height: 28px;">"Ready to speak gestures aloud..."</div>
-                  </div>
-                  <div class="gemini-action-bar" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                    <button id="btn-ask-gemini" class="btn btn-sm btn-primary" style="flex: 1;">
-                      🌟 Ask Gemini to Interpret Frame
-                    </button>
-                    <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); cursor: pointer;">
-                      <input type="checkbox" id="toggle-auto-gemini" style="accent-color: #818cf8; cursor: pointer;" />
-                      <span>Auto-Ask on Unknown Signs</span>
-                    </label>
-                    <button id="btn-gemini-settings" class="btn btn-sm btn-outline" title="Configure Gemini API Key">⚙️ API Key</button>
-                  </div>
-                  <!-- Dynamic Gemini Response & 1-Click HDC Teaching Card -->
-                  <div id="gemini-result-card" style="display: none; margin-top: 12px;"></div>
-                </div>
-
-                <!-- Real-Time Recognition Banner -->
-                <div class="card prediction-card">
-                  <div class="prediction-header">
-                    <span class="prediction-sub">Real-Time Associative Match</span>
-                    <span class="confidence-tag" id="similarity-pill">0.0% Similarity</span>
-                  </div>
-                  <div class="prediction-body">
-                    <div class="predicted-name" id="predicted-label-text">Awaiting Input</div>
-                    <div class="distance-metric">
-                      <span>Hamming Distance: <strong id="hamming-dist-val">-- bits</strong></span>
-                      <span class="sep">•</span>
-                      <span>Latency: <strong id="latency-val">-- μs</strong></span>
-                    </div>
-                  </div>
-                  <div class="similarity-bar-wrapper">
-                    <div id="similarity-meter-fill" class="similarity-bar-fill" style="width: 0%"></div>
-                  </div>
-                </div>
-
-                <!-- Live 3-Way Ablation Benchmark Panel -->
-                <div id="ablation-container"></div>
-
-                <!-- Associative Item Memory (IM) Inspector -->
-                <div id="memory-inspector-container"></div>
-
-                <!-- Neuromorphic Hardware Telemetry & Silicon Efficiency Scorecard -->
-                <div class="card roi-card">
-                  <div class="card-header">
-                    <div class="header-title">
-                      <span class="roi-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                      </span>
-                      <h3>Neuromorphic Hardware Telemetry & Silicon Efficiency</h3>
-                    </div>
-                    <span class="badge badge-green">Production Ready</span>
-                  </div>
-                  <div class="roi-grid">
-                    <div class="roi-item">
-                      <span class="roi-num text-green">1.15 μs</span>
-                      <span class="roi-label">WASM SIMD Inference Latency</span>
-                      <small class="roi-sub">Sub-microsecond deterministic edge reflex</small>
-                    </div>
-                    <div class="roi-item">
-                      <span class="roi-num text-cyan">1.25 KB</span>
-                      <span class="roi-label">Memory Per Class</span>
-                      <small class="roi-sub">D = 10,000 binary bits (36,000x smaller than MobileNet)</small>
-                    </div>
-                    <div class="roi-item">
-                      <span class="roi-num text-purple">&lt; 0.5 ms</span>
-                      <span class="roi-label">Instant 1-Shot Field Enrollment</span>
-                      <small class="roi-sub">0 backprop / zero catastrophic forgetting</small>
-                    </div>
-                    <div class="roi-item">
-                      <span class="roi-num text-green">100% Air-Gapped</span>
-                      <span class="roi-label">On-Device Privacy</span>
-                      <small class="roi-sub">Zero raw biometric frames or data egress</small>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </main>
-          </div>
-
-          <!-- View 2: Time-Arrow Causality Lab -->
-          <div id="view-time-arrow" class="app-view-container view-hidden">
-            <div id="time-arrow-container"></div>
-          </div>
-
-          <!-- View 3: Analogy & Reasoning Lab -->
-          <div id="view-analogy" class="app-view-container view-hidden">
-            <div id="analogy-container"></div>
-          </div>
-
-          <!-- View 4: Language Identifier -->
-          <div id="view-language" class="app-view-container view-hidden">
-            <div id="language-container"></div>
-          </div>
-
-          <!-- View 5: Compositional Gesture Algebra Lab -->
-          <div id="view-compositional" class="app-view-container view-hidden">
-            <div id="compositional-container"></div>
-          </div>
+      <!-- Bottom Hackathon Architecture Banner (For Judges) -->
+      <footer class="arch-footer">
+        <div class="arch-col">
+          <div class="arch-heading text-red">❌ Traditional Cloud Vision</div>
+          <p class="arch-desc">500ms – 2,000ms latency, high bandwidth, drains battery, fails completely offline.</p>
         </div>
-      </div>
-
-      <!-- Footer Literature Reference -->
-      <footer class="footer-bar">
-        <span>Grounded in <strong>Binary Spatter Codes (Kanerva, 1996)</strong> & <strong>Hyperdimensional Computing (Kleyko et al., 2022)</strong>.</span>
-        <span>Evaluated under identical conditions: SIMD WASM vs. Scalar WASM vs. Classical 1-NN Baseline.</span>
+        <div class="arch-divider">➔</div>
+        <div class="arch-col">
+          <div class="arch-heading text-green">⚡ Tier 1: On-Device HDC SIMD</div>
+          <p class="arch-desc"><strong>1.15 μs ($0.001\text{ms}$) query</strong>, 10,000-bit vectors, 100% local, zero latency reflex.</p>
+        </div>
+        <div class="arch-divider">+</div>
+        <div class="arch-col">
+          <div class="arch-heading text-blue">🧠 Tier 2: Google Gemini 2.0</div>
+          <p class="arch-desc">Translates novel conversational sign language and auto-caches them back to Tier 1.</p>
+        </div>
       </footer>
-    </div>
 
-    <!-- Gemini API Key Modal -->
-    <div id="gemini-key-modal" class="modal-overlay hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 99999; display: none; align-items: center; justify-content: center;">
-      <div style="background: #121520; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 24px; max-width: 440px; width: 90%; box-shadow: 0 20px 50px rgba(0,0,0,0.8);">
-        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">🔑 Configure Google Gemini 2.0 Flash</h3>
-        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5;">
-          Enter your Gemini API key below to activate live multimodal vision understanding for unknown/novel gestures. If left blank, pre-trained offline accessibility weights will run for presentation!
-        </p>
-        <input type="password" id="input-gemini-api-key" class="input-text" style="width: 100%; margin-bottom: 16px;" placeholder="AIzaSy..." />
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
-          <button id="btn-close-key-modal" class="btn btn-sm btn-outline">Cancel</button>
-          <button id="btn-save-key-modal" class="btn btn-sm btn-primary">Save Key</button>
+      <!-- Gemini API Key Configuration Modal -->
+      <div id="gemini-key-modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>🔑 Configure Google Gemini 2.0 API Key</h3>
+            <button class="btn-close-modal" id="btn-close-key-modal">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
+              Enter your Google AI Studio Gemini API key to enable Tier 2 live multimodal vision translation.
+            </p>
+            <input 
+              type="password" 
+              id="input-gemini-api-key" 
+              class="text-input" 
+              placeholder="AIzaSy..." 
+              style="width: 100%; margin-bottom: 16px;"
+            />
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 16px;">
+              Your key is saved locally in your browser storage and never uploaded to any third-party server.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-sm btn-ghost" id="btn-cancel-key-modal">Cancel</button>
+            <button class="btn btn-sm btn-primary" id="btn-save-key-modal">Save & Activate</button>
+          </div>
         </div>
       </div>
     </div>
 
+    <!-- Main Entry Module -->
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

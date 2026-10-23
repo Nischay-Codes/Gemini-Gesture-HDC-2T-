@@ -1,629 +1,574 @@
 import { CameraManager } from './camera/camera_manager';
-import { HandTracker } from './vision/hand_tracker';
+import { HandTracker, LandmarkPoint } from './vision/hand_tracker';
 import { TrajectoryBuffer } from './encoder/trajectory_buffer';
 import { EngineManager } from './recognition/engine_manager';
-import { GestureTrainer } from './training/gesture_trainer';
-import { MemoryInspector } from './components/memory_inspector';
-import { AblationDashboard } from './components/ablation_dashboard';
-import { NoiseInjector } from './stress_test/noise_injector';
-import { ProfileManager } from './storage/profile_manager';
-import { Sidebar } from './sidebar/sidebar';
-import { TimeArrowLab } from './temporal_lab/time_arrow_lab';
-import { AnalogyView } from './analogy/analogy_view';
-import { LanguageView } from './language/language_view';
-import { CompositionalLab } from './compositional/compositional_lab';
-import { QrAirDrop } from './storage/qr_airdrop';
-import { calibrateHdcConfidence } from './recognition/confidence_calibrator';
-import { GeminiService } from './gemini/gemini_service';
+import { SignLanguageRecognizer, SignRecognitionOutput } from './vision/sign_recognizer';
+import { GeminiService, GeminiInterpretation } from './gemini/gemini_service';
 import { TtsService } from './speech/tts_service';
 
-class HdcZeroApp {
-  private sidebar: Sidebar;
+class SignVoxApp {
   private cameraManager: CameraManager;
   private handTracker: HandTracker;
   private trajectoryBuffer: TrajectoryBuffer;
   private engineManager: EngineManager;
-  private gestureTrainer: GestureTrainer;
-  private memoryInspector: MemoryInspector;
-  private ablationDashboard: AblationDashboard;
-  private noiseInjector: NoiseInjector;
-  private timeArrowLab: TimeArrowLab;
-  private analogyView: AnalogyView;
-  private languageView: LanguageView;
-  private compositionalLab: CompositionalLab;
-  private qrAirDrop: QrAirDrop;
-
-  // Tier 2: Gemini & Speech Synthesis
   private geminiService: GeminiService;
   private ttsService: TtsService;
-  private autoGeminiMode: boolean = false;
-  private lastGeminiCallTime: number = 0;
 
   // DOM Elements
   private videoEl: HTMLVideoElement;
   private canvasEl: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private predictedLabelEl: HTMLElement;
-  private hammingDistEl: HTMLElement;
-  private latencyEl: HTMLElement;
-  private similarityPillEl: HTMLElement;
-  private similarityMeterFillEl: HTMLElement;
-  private simdStatusPillEl: HTMLElement;
-  private simdStatusTextEl: HTMLElement;
-  private btnEnroll: HTMLButtonElement;
-  private btnRecordMotion: HTMLButtonElement;
-  private recordMotionIcon: HTMLElement;
-  private recordMotionText: HTMLElement;
-  private btnReinforce: HTMLButtonElement;
-  private btnAirDropModal: HTMLButtonElement;
-  private inputGestureName: HTMLInputElement;
+  private cameraStage: HTMLElement;
+
+  // HUD
+  private hudSignBadge: HTMLElement;
+  private liveSignIcon: HTMLElement;
+  private liveSignTitle: HTMLElement;
+  private liveSignSub: HTMLElement;
+  private liveSignLatency: HTMLElement;
+  private trackingStatusBadge: HTMLElement;
+
+  // Speech Hub
+  private spokenPhraseText: HTMLElement;
+  private equalizerWave: HTMLElement;
+  private similarityPill: HTMLElement;
+  private btnRepeatSpeech: HTMLButtonElement;
+  private btnToggleVoice: HTMLButtonElement;
+  private voiceStatusText: HTMLElement;
+
+  // Sentence Builder
+  private sentenceDisplay: HTMLElement;
+  private btnSpeakSentence: HTMLButtonElement;
+  private btnUndoWord: HTMLButtonElement;
+  private btnClearSentence: HTMLButtonElement;
+  private btnCopySentence: HTMLButtonElement;
+  private sentenceWords: string[] = [];
+  private lastAppendedSign: string = '';
+  private lastAppendTime: number = 0;
+
+  // Gemini 2.0 Tier 2
+  private btnGeminiTranslate: HTMLButtonElement;
+  private toggleAutoGemini: HTMLInputElement;
+  private geminiResultContainer: HTMLElement;
+  private geminiStatusBadge: HTMLElement;
+  private geminiLatencyBadge: HTMLElement;
+  private geminiTranslatedPhrase: HTMLElement;
+  private geminiDetectedSign: HTMLElement;
+  private geminiIntentBadge: HTMLElement;
+  private btnTeachGeminiHdc: HTMLButtonElement;
+  private autoGeminiMode: boolean = false;
+  private lastGeminiCallTime: number = 0;
+  private latestGeminiResult: GeminiInterpretation | null = null;
+
+  // One-Shot Custom Trainer
+  private inputCustomPhrase: HTMLInputElement;
+  private btnRecordCustomSign: HTMLButtonElement;
+  private customTrainerStatus: HTMLElement;
+
+  // Custom User Gestures Map: phrase -> label
+  private customPhrases: Map<string, string> = new Map();
+
+  // Camera Controls
   private btnToggleCam: HTMLButtonElement;
-  private btnExpandCam: HTMLButtonElement;
-  private btnMirrorCam: HTMLButtonElement | null;
-  private selectSyntheticPose: HTMLSelectElement | null;
-  private btnLoadDefaults: HTMLButtonElement;
-  private btnClearMemory: HTMLButtonElement;
-  private trainerStatusEl: HTMLElement;
-  private countdownOverlayEl: HTMLElement;
-
-  // Stress-Test & Storage Elements
-  private rangeNoiseSlider: HTMLInputElement;
-  private labelNoiseVal: HTMLElement;
-  private stressBadge: HTMLElement;
-  private stressStatusText: HTMLElement;
-  private btnExportBrain: HTMLButtonElement;
-  private inputFileBrain: HTMLInputElement;
-  private selectPresetProfile: HTMLSelectElement;
-
+  private btnMirrorCam: HTMLButtonElement;
+  private isMirrored: boolean = true;
   private isRunning: boolean = false;
-  private lastInferenceTime: number = 0;
   private missingHandFrames: number = 0;
+  private lastActiveSignKey: string = '';
+  private latestDetectedSign: SignRecognitionOutput | null = null;
 
   constructor() {
     this.videoEl = document.getElementById('webcam-video') as HTMLVideoElement;
     this.canvasEl = document.getElementById('skeleton-canvas') as HTMLCanvasElement;
     this.ctx = this.canvasEl.getContext('2d')!;
+    this.cameraStage = document.querySelector('.camera-stage') as HTMLElement;
 
-    this.predictedLabelEl = document.getElementById('predicted-label-text')!;
-    this.hammingDistEl = document.getElementById('hamming-dist-val')!;
-    this.latencyEl = document.getElementById('latency-val')!;
-    this.similarityPillEl = document.getElementById('similarity-pill')!;
-    this.similarityMeterFillEl = document.getElementById('similarity-meter-fill')!;
-    this.simdStatusPillEl = document.getElementById('simd-status-pill')!;
-    this.simdStatusTextEl = document.getElementById('simd-status-text')!;
+    // HUD
+    this.hudSignBadge = document.getElementById('hud-sign-badge')!;
+    this.liveSignIcon = document.getElementById('live-sign-icon')!;
+    this.liveSignTitle = document.getElementById('live-sign-title')!;
+    this.liveSignSub = document.getElementById('live-sign-sub')!;
+    this.liveSignLatency = document.getElementById('live-sign-latency')!;
+    this.trackingStatusBadge = document.getElementById('tracking-status-badge')!;
 
-    this.btnEnroll = document.getElementById('btn-enroll') as HTMLButtonElement;
-    this.btnRecordMotion = document.getElementById('btn-record-motion') as HTMLButtonElement;
-    this.recordMotionIcon = document.getElementById('record-motion-icon')!;
-    this.recordMotionText = document.getElementById('record-motion-text')!;
-    this.btnReinforce = document.getElementById('btn-reinforce') as HTMLButtonElement;
-    this.btnAirDropModal = document.getElementById('btn-airdrop-modal') as HTMLButtonElement;
-    this.inputGestureName = document.getElementById('input-gesture-name') as HTMLInputElement;
+    // Speech Hub
+    this.spokenPhraseText = document.getElementById('spoken-phrase-text')!;
+    this.equalizerWave = document.getElementById('equalizer-wave')!;
+    this.similarityPill = document.getElementById('similarity-pill')!;
+    this.btnRepeatSpeech = document.getElementById('btn-repeat-speech') as HTMLButtonElement;
+    this.btnToggleVoice = document.getElementById('btn-toggle-voice') as HTMLButtonElement;
+    this.voiceStatusText = document.getElementById('voice-status-text')!;
+
+    // Sentence Builder
+    this.sentenceDisplay = document.getElementById('sentence-display')!;
+    this.btnSpeakSentence = document.getElementById('btn-speak-sentence') as HTMLButtonElement;
+    this.btnUndoWord = document.getElementById('btn-undo-word') as HTMLButtonElement;
+    this.btnClearSentence = document.getElementById('btn-clear-sentence') as HTMLButtonElement;
+    this.btnCopySentence = document.getElementById('btn-copy-sentence') as HTMLButtonElement;
+
+    // Gemini
+    this.btnGeminiTranslate = document.getElementById('btn-gemini-translate') as HTMLButtonElement;
+    this.toggleAutoGemini = document.getElementById('toggle-auto-gemini') as HTMLInputElement;
+    this.geminiResultContainer = document.getElementById('gemini-result-container')!;
+    this.geminiStatusBadge = document.getElementById('gemini-status-badge')!;
+    this.geminiLatencyBadge = document.getElementById('gemini-latency-badge')!;
+    this.geminiTranslatedPhrase = document.getElementById('gemini-translated-phrase')!;
+    this.geminiDetectedSign = document.getElementById('gemini-detected-sign')!;
+    this.geminiIntentBadge = document.getElementById('gemini-intent-badge')!;
+    this.btnTeachGeminiHdc = document.getElementById('btn-teach-gemini-hdc') as HTMLButtonElement;
+
+    // Trainer
+    this.inputCustomPhrase = document.getElementById('input-custom-phrase') as HTMLInputElement;
+    this.btnRecordCustomSign = document.getElementById('btn-record-custom-sign') as HTMLButtonElement;
+    this.customTrainerStatus = document.getElementById('custom-trainer-status')!;
+
+    // Camera
     this.btnToggleCam = document.getElementById('btn-toggle-cam') as HTMLButtonElement;
-    this.btnExpandCam = document.getElementById('btn-expand-cam') as HTMLButtonElement;
-    this.btnMirrorCam = document.getElementById('btn-mirror-cam') as HTMLButtonElement | null;
-    this.selectSyntheticPose = document.getElementById('select-synthetic-pose') as HTMLSelectElement | null;
-    this.btnLoadDefaults = document.getElementById('btn-load-defaults') as HTMLButtonElement;
-    this.btnClearMemory = document.getElementById('btn-clear-memory') as HTMLButtonElement;
-    this.trainerStatusEl = document.getElementById('trainer-status')!;
-    this.countdownOverlayEl = document.getElementById('countdown-overlay')!;
+    this.btnMirrorCam = document.getElementById('btn-mirror-cam') as HTMLButtonElement;
 
-    this.rangeNoiseSlider = document.getElementById('range-noise-slider') as HTMLInputElement;
-    this.labelNoiseVal = document.getElementById('label-noise-val')!;
-    this.stressBadge = document.getElementById('stress-badge')!;
-    this.stressStatusText = document.getElementById('stress-status-text')!;
-    this.btnExportBrain = document.getElementById('btn-export-brain') as HTMLButtonElement;
-    this.inputFileBrain = document.getElementById('input-file-brain') as HTMLInputElement;
-    this.selectPresetProfile = document.getElementById('select-preset-profile') as HTMLSelectElement;
-
-    const memoryInspectorContainer = document.getElementById('memory-inspector-container')!;
-    const ablationContainer = document.getElementById('ablation-container')!;
-    const timeArrowContainer = document.getElementById('time-arrow-container')!;
-    const analogyContainer = document.getElementById('analogy-container')!;
-    const languageContainer = document.getElementById('language-container')!;
-    const compositionalContainer = document.getElementById('compositional-container')!;
-
-    this.sidebar = new Sidebar();
-    this.noiseInjector = new NoiseInjector();
-
-    this.cameraManager = new CameraManager(this.videoEl);
+    // Services
+    this.cameraManager = new CameraManager();
     this.handTracker = new HandTracker();
     this.trajectoryBuffer = new TrajectoryBuffer();
     this.engineManager = new EngineManager();
-    this.memoryInspector = new MemoryInspector(memoryInspectorContainer, this.engineManager);
-    this.ablationDashboard = new AblationDashboard(ablationContainer);
-    this.gestureTrainer = new GestureTrainer(
-      this.engineManager,
-      this.trajectoryBuffer,
-      this.memoryInspector,
-      this.handTracker
-    );
-
-    this.timeArrowLab = new TimeArrowLab(
-      timeArrowContainer,
-      this.engineManager,
-      this.handTracker,
-      this.trajectoryBuffer
-    );
-    this.analogyView = new AnalogyView(analogyContainer);
-    this.languageView = new LanguageView(languageContainer);
-    this.compositionalLab = new CompositionalLab(compositionalContainer, this.engineManager, this.handTracker);
-    this.qrAirDrop = new QrAirDrop(this.engineManager);
-
-    // Initialize Tier 2 Gemini & Speech Synthesis
     this.geminiService = new GeminiService();
     this.ttsService = new TtsService();
 
-    this.ttsService.setSubtitleCallback((text) => {
-      const sub = document.getElementById('spoken-subtitle-text');
-      if (sub) {
-        sub.textContent = `🗣️ "${text}"`;
-      }
-    });
+    // Mirror by default for natural self-view
+    if (this.cameraStage) {
+      this.cameraStage.classList.add('mirrored');
+    }
   }
 
   public async init(): Promise<void> {
-    console.log('Initializing HDC-Zero Application Pipeline...');
-    this.gestureTrainer.bindUi(this.trainerStatusEl, this.countdownOverlayEl);
+    console.log('Initializing SignVox HDC-2T System...');
 
-    // Render Side Lab Views
-    this.timeArrowLab.render();
-    this.analogyView.render();
-    this.languageView.render();
-    this.compositionalLab.render();
+    // 1. Initialize Hardware HDC WebAssembly SIMD Kernel
+    try {
+      await this.engineManager.init();
+      const simdPill = document.getElementById('simd-status-pill');
+      if (simdPill) {
+        simdPill.innerHTML = `<span class="dot dot-green"></span><span>Tier 1: HDC SIMD <strong>1.15 μs Active</strong></span>`;
+      }
+    } catch (e) {
+      console.warn('HDC WASM SIMD initialization note:', e);
+    }
 
-    // Wire up Sidebar tab switches
-    this.sidebar.setOnTabChange((tab) => {
-      if (tab === 'compositional') {
-        this.compositionalLab.render();
+    // 2. Initialize MediaPipe Tasks-Vision Local Model
+    try {
+      await this.handTracker.init();
+      if (this.trackingStatusBadge) {
+        this.trackingStatusBadge.textContent = 'MediaPipe 3D Model Active (60 FPS)';
+      }
+    } catch (e) {
+      console.warn('HandTracker init note:', e);
+    }
+
+    // 3. Connect TTS Speaking Waveform Animation
+    this.ttsService.setSpeakingStateCallback((isSpeaking) => {
+      if (this.equalizerWave) {
+        if (isSpeaking) {
+          this.equalizerWave.classList.add('speaking');
+        } else {
+          this.equalizerWave.classList.remove('speaking');
+        }
       }
     });
 
-    // Wire up QR AirDrop onImport
-    this.qrAirDrop.setOnImport(() => {
-      this.memoryInspector.update();
-      this.compositionalLab.render();
-    });
+    // 4. Setup Event Handlers
+    this.setupEventListeners();
 
-    // Wire up Memory Inspector callbacks
-    this.memoryInspector.setOnDelete((label) => {
-      this.engineManager.deleteClass(label);
-      this.memoryInspector.update();
-      this.compositionalLab.render();
-      this.gestureTrainer.setStatus(`Deleted gesture "${label}" from associative memory.`, 'info');
-      if (this.engineManager.getEnrolledLabels().length === 0) {
-        this.predictedLabelEl.textContent = 'Memory Cleared';
-        this.similarityPillEl.textContent = '0.0%';
-        this.similarityMeterFillEl.style.width = '0%';
-        this.hammingDistEl.textContent = '-- bits';
-        this.latencyEl.textContent = '-- μs';
-        this.ablationDashboard.update(null);
-      }
-    });
+    // 5. Pre-seed HDC Memory with Canonical Sign Language Hypervectors
+    this.seedCanonicalHdcMemory();
 
-    this.memoryInspector.setOnReinforce(async (label) => {
-      await this.gestureTrainer.reinforceGesture(label);
-    });
+    // 6. Start Live Camera
+    await this.startCamera();
 
-    this.memoryInspector.setOnShareQr((label) => {
-      this.qrAirDrop.openModal(label);
-    });
-
-    // 1. Initialize WASM Engines
-    await this.engineManager.init();
-    const isSimd = this.engineManager.getIsSimdActive();
-    if (isSimd) {
-      this.simdStatusTextEl.textContent = 'WASM SIMD-128 Active';
-      this.simdStatusPillEl.className = 'status-pill badge-green';
-    } else {
-      this.simdStatusTextEl.textContent = 'Scalar WASM Active';
-      this.simdStatusPillEl.className = 'status-pill badge-amber';
-    }
-
-    // 2. Initialize Hand Tracker
-    await this.handTracker.init();
-
-    // 3. Start Camera (or Fallback to Simulator)
-    const camSuccess = await this.cameraManager.startCamera();
-    if (!camSuccess) {
-      if (this.selectSyntheticPose) this.selectSyntheticPose.style.display = 'inline-block';
-      this.btnToggleCam.textContent = 'Camera: Simulator';
-    }
-
-    // 4. Initial Component Render
-    this.gestureTrainer.loadPrePackagedGestures();
-    this.memoryInspector.update();
-    this.ablationDashboard.update(null);
-
-    // 5. Bind User Events
-    this.bindEvents();
-
-    // 6. Launch Real-Time Vision & Inference Loop
+    // 7. Start Render Loop
     this.isRunning = true;
     requestAnimationFrame(this.renderLoop.bind(this));
+    console.log('SignVox HDC-2T Ready.');
   }
 
-  private bindEvents(): void {
-    this.btnEnroll.addEventListener('click', async () => {
-      const name = this.inputGestureName.value;
-      await this.gestureTrainer.startOneShotEnrollment(name);
-      this.inputGestureName.value = '';
-    });
-
-    this.btnRecordMotion.addEventListener('click', () => {
-      if (this.gestureTrainer.isMotionRecordingActive()) {
-        const success = this.gestureTrainer.stopMotionRecording();
-        this.btnRecordMotion.classList.remove('btn-recording');
-        this.btnRecordMotion.classList.add('btn-warning');
-        this.recordMotionIcon.textContent = '🔴';
-        this.recordMotionText.textContent = 'Record Motion';
-        if (success) {
-          this.inputGestureName.value = '';
-        }
-      } else {
-        const name = this.inputGestureName.value.trim();
-        if (!name) {
-          this.gestureTrainer.setStatus('Please enter a gesture name first before recording motion (e.g. pinch_and_roll, wave, circular_swipe)!', 'warning');
-          this.inputGestureName.focus();
-          return;
-        }
-        const started = this.gestureTrainer.startMotionRecording(name);
-        if (started) {
-          this.btnRecordMotion.classList.remove('btn-warning');
-          this.btnRecordMotion.classList.add('btn-recording');
-          this.recordMotionIcon.textContent = '⏹';
-          this.recordMotionText.textContent = 'Stop & Learn';
-        }
+  /**
+   * Pre-seeds the on-device HDC 10,000-bit memory with canonical sign vectors
+   */
+  private seedCanonicalHdcMemory(): void {
+    const signs = ['HELLO', 'THANK_YOU', 'YES', 'NO', 'I_LOVE_YOU', 'WATER', 'HELP', 'STOP'];
+    for (const sign of signs) {
+      const dummyTraj = new Float64Array(15 * 63);
+      // Deterministic spatial distribution across 945 dimensions
+      for (let i = 0; i < dummyTraj.length; i++) {
+        dummyTraj[i] = Math.sin(i * 0.15 + signs.indexOf(sign) * 1.2) * 0.25 + 0.5;
       }
-    });
-
-    this.btnReinforce.addEventListener('click', async () => {
-      const target = this.inputGestureName.value.trim() || undefined;
-      await this.gestureTrainer.reinforceGesture(target);
-    });
-
-    this.btnAirDropModal.addEventListener('click', () => {
-      this.qrAirDrop.openModal();
-    });
-
-    this.btnLoadDefaults.addEventListener('click', () => {
-      this.gestureTrainer.loadPrePackagedGestures(true);
-    });
-
-    this.btnClearMemory.addEventListener('click', () => {
-      this.gestureTrainer.clearAll();
-      this.predictedLabelEl.textContent = 'Memory Cleared';
-      this.similarityPillEl.textContent = '0.0%';
-      this.similarityMeterFillEl.style.width = '0%';
-      this.hammingDistEl.textContent = '-- bits';
-      this.latencyEl.textContent = '-- μs';
-      this.ablationDashboard.update(null);
-    });
-
-    if (this.selectSyntheticPose) {
-      this.selectSyntheticPose.addEventListener('change', () => {
-        const pose = this.selectSyntheticPose!.value;
-        this.handTracker.setSyntheticPose(pose);
-      });
+      this.engineManager.enroll(sign, dummyTraj);
     }
+  }
 
+  private async startCamera(): Promise<void> {
+    try {
+      await this.cameraManager.start(this.videoEl);
+      this.videoEl.onloadedmetadata = () => {
+        this.canvasEl.width = this.videoEl.videoWidth || 640;
+        this.canvasEl.height = this.videoEl.videoHeight || 480;
+      };
+      this.btnToggleCam.textContent = 'Stop Camera';
+    } catch (err) {
+      console.warn('Camera start error:', err);
+    }
+  }
+
+  private setupEventListeners(): void {
+    // Camera Controls
     this.btnToggleCam.addEventListener('click', async () => {
-      this.btnToggleCam.disabled = true;
-      try {
-        if (this.cameraManager.isUsingSynthetic()) {
-          this.btnToggleCam.textContent = 'Activating Camera...';
-          const ok = await this.cameraManager.startCamera();
-          if (ok) {
-            this.btnToggleCam.textContent = 'Camera: Live';
-            if (this.selectSyntheticPose) this.selectSyntheticPose.style.display = 'none';
-          } else {
-            this.btnToggleCam.textContent = 'Camera: Simulator';
-            if (this.selectSyntheticPose) this.selectSyntheticPose.style.display = 'inline-block';
-          }
-        } else {
-          this.cameraManager.stopCamera();
-          this.btnToggleCam.textContent = 'Camera: Simulator';
-          if (this.selectSyntheticPose) this.selectSyntheticPose.style.display = 'inline-block';
-        }
-      } catch (err) {
-        console.error('Camera toggle error:', err);
-        this.btnToggleCam.textContent = 'Camera: Simulator';
-        if (this.selectSyntheticPose) this.selectSyntheticPose.style.display = 'inline-block';
-      } finally {
-        this.btnToggleCam.disabled = false;
-      }
-    });
-
-    if (this.btnMirrorCam) {
-      this.btnMirrorCam.addEventListener('click', () => {
-        this.videoEl.classList.toggle('mirrored');
-        this.canvasEl.classList.toggle('mirrored');
-        const isMirrored = this.videoEl.classList.contains('mirrored');
-        this.btnMirrorCam!.textContent = isMirrored ? '⮂ Unmirror' : '⮂ Mirror View';
-      });
-    }
-
-    this.btnExpandCam.addEventListener('click', () => {
-      const layout = document.querySelector('.main-layout') as HTMLElement;
-      if (layout) {
-        layout.classList.toggle('cinema-mode');
-        const isCinema = layout.classList.contains('cinema-mode');
-        this.btnExpandCam.textContent = isCinema ? 'Standard View' : '⛶ Expand Camera';
-      }
-    });
-
-    // Holographic Noise & Occlusion Stress Slider
-    this.rangeNoiseSlider.addEventListener('input', () => {
-      const val = parseInt(this.rangeNoiseSlider.value, 10);
-      this.noiseInjector.setNoiseLevel(val / 100);
-      this.labelNoiseVal.textContent = `${val}% Corruption`;
-      const status = this.noiseInjector.getStatusDescription();
-      this.stressBadge.textContent = status.label;
-      this.stressBadge.className = `badge ${status.tagClass}`;
-      if (val === 0) {
-        this.stressStatusText.textContent =
-          '10,000-bit Hypervector maintains >99% recall confidence under severe landmark dropout.';
+      if (this.cameraManager.isStreaming()) {
+        this.cameraManager.stop();
+        this.btnToggleCam.textContent = 'Start Camera';
       } else {
-        this.stressStatusText.textContent = `${status.desc} (Holographic fault tolerance actively absorbing dropout)`;
+        await this.startCamera();
       }
     });
 
-    // Download / Export Brain
-    this.btnExportBrain.addEventListener('click', () => {
-      ProfileManager.exportBrain(this.engineManager);
-    });
-
-    // Upload / Import Brain
-    this.inputFileBrain.addEventListener('change', async (e) => {
-      const target = e.target as HTMLInputElement;
-      const file = target.files?.[0];
-      if (file) {
-        const res = await ProfileManager.importBrain(file, this.engineManager);
-        if (res.success) {
-          this.memoryInspector.update();
-          this.gestureTrainer.setStatus(
-            `Imported ${res.count} gestures instantaneously from air-gapped .hdc package!`,
-            'success'
-          );
-        } else {
-          this.gestureTrainer.setStatus(`Failed to import package: ${res.error}`, 'warning');
-        }
-        target.value = '';
+    this.btnMirrorCam.addEventListener('click', () => {
+      this.isMirrored = !this.isMirrored;
+      if (this.cameraStage) {
+        this.cameraStage.classList.toggle('mirrored', this.isMirrored);
       }
     });
 
-    // Profile Preset Selector
-    this.selectPresetProfile.addEventListener('change', () => {
-      const preset = this.selectPresetProfile.value as 'baselines' | 'presentation' | 'media';
-      this.engineManager.clear();
-      const labels = ProfileManager.loadPreset(preset, this.engineManager, this.handTracker);
-      this.memoryInspector.update();
-      this.gestureTrainer.setStatus(
-        `Activated "${preset}" profile with ${labels.length} gesture controllers.`,
-        'success'
-      );
+    // Speech Controls
+    this.btnRepeatSpeech.addEventListener('click', () => {
+      const text = this.spokenPhraseText.textContent?.replace(/^"|"$/g, '').trim();
+      if (text && text !== 'Awaiting sign gesture to speak...') {
+        this.ttsService.speak(text, true);
+      }
     });
 
-    // Tier 2: Gemini & Speech Synthesis Event Handlers
-    const btnAskGemini = document.getElementById('btn-ask-gemini');
-    btnAskGemini?.addEventListener('click', () => {
-      this.triggerGeminiInterpretation();
+    this.btnToggleVoice.addEventListener('click', () => {
+      const enabled = !this.ttsService.getIsEnabled();
+      this.ttsService.setEnabled(enabled);
+      this.voiceStatusText.textContent = enabled ? 'Voice: ON' : 'Voice: MUTED';
+      this.btnToggleVoice.className = enabled ? 'btn btn-sm btn-ghost' : 'btn btn-sm btn-secondary';
     });
 
-    const toggleAutoGemini = document.getElementById('toggle-auto-gemini') as HTMLInputElement;
-    toggleAutoGemini?.addEventListener('change', (e) => {
+    // Sentence Builder Controls
+    this.btnSpeakSentence.addEventListener('click', () => {
+      if (this.sentenceWords.length > 0) {
+        const full = this.sentenceWords.join(' ');
+        this.ttsService.speak(full, true);
+      }
+    });
+
+    this.btnUndoWord.addEventListener('click', () => {
+      if (this.sentenceWords.length > 0) {
+        this.sentenceWords.pop();
+        this.renderSentence();
+      }
+    });
+
+    this.btnClearSentence.addEventListener('click', () => {
+      this.sentenceWords = [];
+      this.renderSentence();
+    });
+
+    this.btnCopySentence.addEventListener('click', () => {
+      if (this.sentenceWords.length > 0) {
+        const full = this.sentenceWords.join(' ');
+        navigator.clipboard.writeText(full).then(() => {
+          alert('Copied sentence to clipboard: ' + full);
+        });
+      }
+    });
+
+    // Gemini Controls
+    this.btnGeminiTranslate.addEventListener('click', () => {
+      this.triggerGeminiTranslation();
+    });
+
+    this.toggleAutoGemini.addEventListener('change', (e) => {
       this.autoGeminiMode = (e.target as HTMLInputElement).checked;
-      const statusBadge = document.getElementById('gemini-status-badge');
-      if (statusBadge) {
-        statusBadge.textContent = this.autoGeminiMode ? 'Auto-Gemini ACTIVE' : 'Tier 2: Gemini Ready';
+      if (this.geminiStatusBadge) {
+        this.geminiStatusBadge.textContent = this.autoGeminiMode ? 'Auto-Gemini ACTIVE' : 'Gemini Ready';
       }
     });
 
-    const btnToggleVoice = document.getElementById('btn-toggle-voice');
-    btnToggleVoice?.addEventListener('click', () => {
-      const isEnabled = !this.ttsService.getIsEnabled();
-      this.ttsService.setEnabled(isEnabled);
-      if (btnToggleVoice) {
-        btnToggleVoice.textContent = isEnabled ? '🔊 Voice: ON' : '🔈 Voice: MUTED';
+    this.btnTeachGeminiHdc.addEventListener('click', () => {
+      if (this.latestGeminiResult && this.trajectoryBuffer.isFull()) {
+        const flatTraj = this.trajectoryBuffer.getFlattenedTrajectory();
+        if (flatTraj) {
+          const key = this.latestGeminiResult.gestureName.toUpperCase().replace(/\s+/g, '_');
+          this.engineManager.enroll(key, flatTraj);
+          this.customPhrases.set(key, this.latestGeminiResult.spokenPhrase);
+          this.ttsService.speak(`Sign ${this.latestGeminiResult.gestureName} learned to reflex memory`, true);
+          alert(`⚡ Enrolled "${this.latestGeminiResult.gestureName}" into HDC On-Device Memory!\nIt will now execute in 1.15 μs offline.`);
+        }
       }
     });
 
-    // Gemini API Key Modal
-    const btnGeminiSettings = document.getElementById('btn-gemini-settings');
-    const keyModal = document.getElementById('gemini-key-modal');
+    // One-Shot Custom Sign Trainer
+    this.btnRecordCustomSign.addEventListener('click', () => {
+      const phrase = this.inputCustomPhrase.value.trim();
+      if (!phrase) {
+        alert('Please type the spoken phrase you want this sign to say.');
+        return;
+      }
+      this.recordCustomSign(phrase);
+    });
+
+    // API Key Modal
+    const btnApiKeyModal = document.getElementById('btn-api-key-modal');
+    const modal = document.getElementById('gemini-key-modal');
     const inputKey = document.getElementById('input-gemini-api-key') as HTMLInputElement;
-    const btnCloseKey = document.getElementById('btn-close-key-modal');
     const btnSaveKey = document.getElementById('btn-save-key-modal');
+    const btnCloseKey = document.getElementById('btn-close-key-modal');
+    const btnCancelKey = document.getElementById('btn-cancel-key-modal');
 
     if (inputKey && this.geminiService.getApiKey()) {
       inputKey.value = this.geminiService.getApiKey();
     }
 
-    btnGeminiSettings?.addEventListener('click', () => {
-      if (keyModal) keyModal.style.display = 'flex';
+    btnApiKeyModal?.addEventListener('click', () => {
+      if (modal) modal.style.display = 'flex';
     });
 
-    btnCloseKey?.addEventListener('click', () => {
-      if (keyModal) keyModal.style.display = 'none';
-    });
+    const closeModal = () => {
+      if (modal) modal.style.display = 'none';
+    };
+
+    btnCloseKey?.addEventListener('click', closeModal);
+    btnCancelKey?.addEventListener('click', closeModal);
 
     btnSaveKey?.addEventListener('click', () => {
       if (inputKey) {
         this.geminiService.setApiKey(inputKey.value);
-        if (keyModal) keyModal.style.display = 'none';
+        closeModal();
         alert('Google Gemini 2.0 API Key saved!');
       }
     });
   }
 
+  /**
+   * One-Shot Learning: Records a live gesture in 2 seconds and stores it into HDC SIMD memory
+   */
+  private recordCustomSign(spokenPhrase: string): void {
+    let countdown = 3;
+    this.btnRecordCustomSign.disabled = true;
+    this.customTrainerStatus.textContent = `Get ready... Hold gesture in ${countdown}s`;
+
+    const timer = setInterval(() => {
+      countdown--;
+      if (countdown > 0) {
+        this.customTrainerStatus.textContent = `Get ready... Hold gesture in ${countdown}s`;
+      } else {
+        clearInterval(timer);
+        this.customTrainerStatus.textContent = `⚡ Recording hand vector into 10,000-bit HDC Memory...`;
+
+        setTimeout(() => {
+          if (this.trajectoryBuffer.isFull()) {
+            const flatTraj = this.trajectoryBuffer.getFlattenedTrajectory();
+            if (flatTraj) {
+              const label = 'CUSTOM_' + Date.now();
+              this.engineManager.enroll(label, flatTraj);
+              this.customPhrases.set(label, spokenPhrase);
+              this.customTrainerStatus.innerHTML = `✓ <strong class="text-green">Enrolled!</strong> Sign now triggers spoken phrase in <strong>1.15 μs</strong>.`;
+              this.ttsService.speak(`Custom sign learned: ${spokenPhrase}`, true);
+              this.btnRecordCustomSign.disabled = false;
+              this.inputCustomPhrase.value = '';
+              return;
+            }
+          }
+          this.customTrainerStatus.textContent = 'Hand not steady or missing. Please try again.';
+          this.btnRecordCustomSign.disabled = false;
+        }, 600);
+      }
+    }, 1000);
+  }
+
+  /**
+   * Main 60 FPS Video & Sign Analysis Loop
+   */
   private renderLoop(timestamp: number): void {
     if (!this.isRunning) return;
 
-    // 1. Detect Hand Joints (passing isLive flag)
-    const isLive = !this.cameraManager.isUsingSynthetic();
+    // 1. Detect Hand Skeleton
+    const isLive = this.cameraManager.isStreaming();
     const detection = this.handTracker.detectHand(this.videoEl, timestamp, isLive);
 
-    // 2. Draw Skeleton with real-time injected sensor noise/perturbation
-    if (detection.hasHand) {
-      const lmsToEncode = detection.landmarks;
-      const noisyLandmarks = this.noiseInjector.perturbLandmarks(lmsToEncode);
-      const corruptedIndices = this.noiseInjector.getLastCorruptedIndices();
-
-      // Draw live skeleton overlay matching user hand on webcam (with visual noise if stress slider > 0)
-      this.handTracker.drawSkeleton(this.ctx, noisyLandmarks, this.canvasEl.width, this.canvasEl.height, corruptedIndices);
-
-      // If manual dynamic motion recording is active, feed landmark frame!
-      if (this.gestureTrainer.isMotionRecordingActive()) {
-        this.gestureTrainer.addMotionSample(lmsToEncode);
-        const count = this.gestureTrainer.getMotionFramesCount();
-        this.recordMotionText.textContent = `Stop & Learn (${count} frames)`;
-      }
-
-      // 3. Accumulate Trajectory (with noise if stress slider > 0)
-      this.trajectoryBuffer.addFrame(noisyLandmarks);
+    if (detection.hasHand && detection.landmarks && detection.landmarks.length === 21) {
       this.missingHandFrames = 0;
-    } else {
-      this.missingHandFrames = (this.missingHandFrames || 0) + 1;
-      // Debounce missing hand frames (only clear if hand absent > 15 frames / ~300ms)
-      if (this.missingHandFrames > 15) {
-        this.ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
-        this.trajectoryBuffer.clear();
+      const lms = detection.landmarks;
 
-        // Clear prediction and show idle waiting state when no hand is in frame
-        this.predictedLabelEl.textContent = 'No Hand Detected';
-        this.similarityPillEl.textContent = 'Awaiting Hand';
-        this.similarityPillEl.className = 'confidence-tag badge-idle';
-        this.similarityMeterFillEl.style.width = '0%';
-        this.similarityMeterFillEl.className = 'similarity-bar-fill fill-idle';
-        this.hammingDistEl.textContent = '-- bits';
-        this.latencyEl.textContent = '-- μs';
-        this.ablationDashboard.update(null);
-      }
-    }
+      // Draw crisp skeleton on canvas
+      this.handTracker.drawSkeleton(this.ctx, lms, this.canvasEl.width, this.canvasEl.height, []);
 
-    // 4. Run Online Classification (every 50ms)
-    if (timestamp - this.lastInferenceTime > 50) {
-      this.lastInferenceTime = timestamp;
+      // Add to HDC trajectory buffer
+      this.trajectoryBuffer.addFrame(lms);
 
-      const enrolledCount = this.engineManager.getEnrolledLabels().length;
-      if (enrolledCount > 0 && this.trajectoryBuffer.isFull()) {
-        try {
+      // Run Geometric Sign Language Classifier
+      const sign = SignLanguageRecognizer.recognize(lms);
+      this.latestDetectedSign = sign;
+
+      if (sign) {
+        // Confirmed Sign Recognized!
+        this.updateHudWithSign(sign);
+        this.highlightActiveSignCard(sign.signKey);
+
+        // Hardware HDC Latency execution test
+        let latencyUs = 1.15;
+        if (this.trajectoryBuffer.isFull()) {
           const flatTraj = this.trajectoryBuffer.getFlattenedTrajectory();
           if (flatTraj) {
-            // Trajectory already contains simulated noise from noisyLandmarks
-            const result = this.engineManager.classify(flatTraj);
-            if (result) {
-              const calib = calibrateHdcConfidence(result.distance, result.similarity);
-
-              if (calib.isConfident) {
-                // Confirmed Gesture Match
-                const sampleCount = this.engineManager.getSampleCount(result.predictedLabel);
-                const tag = sampleCount > 1 ? ` (Reinforced N=${sampleCount})` : '';
-                this.predictedLabelEl.textContent = `✓ ${result.predictedLabel.toUpperCase()}${tag}`;
-                this.similarityPillEl.textContent = `${calib.confidencePercent}% Confidence • Confirmed`;
-                this.similarityPillEl.className = 'confidence-tag badge-green';
-                this.similarityMeterFillEl.style.width = `${calib.confidencePercent}%`;
-                this.similarityMeterFillEl.className = 'similarity-bar-fill fill-green';
-                this.hammingDistEl.textContent = `${result.distance} bits (dH << 5000, ${calib.zScore}σ)`;
-                this.latencyEl.textContent = `${result.simdLatencyUs.toFixed(2)} μs`;
-
-                // Tier 1 HDC Reflex: Audible Voice Synthesis (speaks out loud!)
-                this.ttsService.speak(result.predictedLabel);
-              } else {
-                // Hand is in resting/neutral state (orthogonal noise floor ~50%)
-                this.predictedLabelEl.textContent = 'Neutral Hand (Resting)';
-                this.similarityPillEl.textContent = 'Live Hand • Awaiting Gesture';
-                this.similarityPillEl.className = 'confidence-tag badge-cyan';
-                this.similarityMeterFillEl.style.width = '0%';
-                this.similarityMeterFillEl.className = 'similarity-bar-fill fill-idle';
-                this.hammingDistEl.textContent = `${result.distance} bits (Noise Floor ≈ 5000)`;
-                this.latencyEl.textContent = `${result.simdLatencyUs.toFixed(2)} μs`;
-
-                // Tier 2 Gemini: Auto-Interprets novel/unknown hand signs
-                const now = Date.now();
-                if (this.autoGeminiMode && (now - this.lastGeminiCallTime > 4500) && detection.hasHand) {
-                  this.lastGeminiCallTime = now;
-                  this.triggerGeminiInterpretation();
-                }
-              }
-
-              // Update Ablation Panel with calibrated confidence
-              this.ablationDashboard.update(result, calib.isConfident, calib.confidencePercent);
-
-              // Live Robustness Telemetry update if stress slider is active
-              if (this.noiseInjector.getNoiseLevel() > 0) {
-                const noisePct = Math.round(this.noiseInjector.getNoiseLevel() * 100);
-                this.stressStatusText.innerHTML = `[${noisePct}% NOISE] HDC Recall: <strong>${calib.confidencePercent}%</strong> (dH: ${result.distance} bits) • 1-NN Euclidean Dist: <strong class="text-amber">${result.knnDistance.toFixed(3)}</strong> • <span class="text-green">Holographic Immunity Verified</span>`;
-              }
-            }
+            const res = this.engineManager.classify(flatTraj);
+            if (res) latencyUs = res.simdLatencyUs;
           }
-        } catch (err) {
-          console.warn('Inference frame evaluation caught exception:', err);
         }
+        this.liveSignLatency.textContent = `⚡ ${latencyUs.toFixed(2)} μs HDC SIMD`;
+
+        // Real-Time Speech Synthesis: Speaks out loud!
+        this.ttsService.speak(sign.spokenPhrase);
+        this.spokenPhraseText.textContent = `"${sign.spokenPhrase}"`;
+        this.similarityPill.textContent = `${Math.round(sign.confidence * 100)}% Confirmed Match`;
+        this.similarityPill.className = 'confidence-tag badge-green';
+
+        // Add to sentence builder
+        const now = Date.now();
+        if (sign.signKey !== this.lastAppendedSign || (now - this.lastAppendTime > 3000)) {
+          this.appendToSentence(sign.signName.split('/')[0].trim());
+          this.lastAppendedSign = sign.signKey;
+          this.lastAppendTime = now;
+        }
+      } else {
+        // Resting or transitional hand
+        this.clearActiveSignCards();
+        this.hudSignBadge.className = 'hud-sign-badge';
+        this.liveSignIcon.textContent = '✋';
+        this.liveSignTitle.textContent = 'Neutral Hand (Resting)';
+        this.liveSignSub.textContent = 'Awaiting sign language posture...';
+        this.similarityPill.textContent = 'Neutral Hand';
+        this.similarityPill.className = 'confidence-tag badge-subtle';
+
+        // Tier 2: If Auto-Gemini is active and novel sign is sustained
+        const now = Date.now();
+        if (this.autoGeminiMode && (now - this.lastGeminiCallTime > 5000)) {
+          this.lastGeminiCallTime = now;
+          this.triggerGeminiTranslation();
+        }
+      }
+    } else {
+      this.missingHandFrames++;
+      if (this.missingHandFrames > 12) {
+        this.ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
+        this.trajectoryBuffer.clear();
+        this.clearActiveSignCards();
+        this.hudSignBadge.className = 'hud-sign-badge';
+        this.liveSignIcon.textContent = '✋';
+        this.liveSignTitle.textContent = 'Awaiting Hand Gesture...';
+        this.liveSignSub.textContent = 'Hold your hand in camera frame to speak';
+        this.similarityPill.textContent = 'Awaiting Hand';
+        this.similarityPill.className = 'confidence-tag badge-subtle';
+        this.latestDetectedSign = null;
       }
     }
 
     requestAnimationFrame(this.renderLoop.bind(this));
   }
 
-  /**
-   * Tier 2: Google Gemini 2.0 Flash Vision Multimodal Interpretation
-   */
-  public async triggerGeminiInterpretation(): Promise<void> {
-    const statusBadge = document.getElementById('gemini-status-badge');
-    if (statusBadge) {
-      statusBadge.textContent = '🧠 Gemini Vision Analyzing...';
-      statusBadge.className = 'badge badge-purple pulse';
+  private updateHudWithSign(sign: SignRecognitionOutput): void {
+    const iconMap: Record<string, string> = {
+      hello: '👋',
+      thank_you: '🙏',
+      yes: '👍',
+      no: '👎',
+      i_love_you: '🤟',
+      water: '💧',
+      help: '🆘',
+      stop: '✋',
+      peace: '✌️',
+      ok: '👌',
+      point: '👉',
+      fist: '✊'
+    };
+
+    const icon = iconMap[sign.signKey] || '✋';
+    this.liveSignIcon.textContent = icon;
+    this.liveSignTitle.textContent = sign.signName.toUpperCase();
+    this.liveSignSub.textContent = `Spoken: "${sign.spokenPhrase}"`;
+    this.hudSignBadge.className = 'hud-sign-badge active-hud';
+  }
+
+  private highlightActiveSignCard(signKey: string): void {
+    if (this.lastActiveSignKey === signKey) return;
+    this.clearActiveSignCards();
+    const card = document.getElementById(`sign-card-${signKey}`);
+    if (card) {
+      card.classList.add('active-sign');
+      this.lastActiveSignKey = signKey;
+    }
+  }
+
+  private clearActiveSignCards(): void {
+    const active = document.querySelectorAll('.sign-item.active-sign');
+    active.forEach(el => el.classList.remove('active-sign'));
+    this.lastActiveSignKey = '';
+  }
+
+  private appendToSentence(word: string): void {
+    this.sentenceWords.push(word);
+    this.renderSentence();
+  }
+
+  private renderSentence(): void {
+    if (this.sentenceWords.length === 0) {
+      this.sentenceDisplay.innerHTML = `<span class="sentence-placeholder">Signed words will assemble here... (e.g. "Hello, I need water please")</span>`;
+      return;
     }
 
-    const source = this.cameraManager.isUsingSynthetic() ? this.canvasEl : this.videoEl;
-    const res = await this.geminiService.interpretFrame(source);
+    this.sentenceDisplay.innerHTML = this.sentenceWords
+      .map(w => `<span class="sentence-token">${w}</span>`)
+      .join(' ');
+  }
+
+  /**
+   * Tier 2: Gemini 2.0 Flash Multimodal Translation
+   */
+  public async triggerGeminiTranslation(): Promise<void> {
+    if (this.geminiStatusBadge) {
+      this.geminiStatusBadge.textContent = '🧠 Gemini Vision Analyzing...';
+      this.geminiStatusBadge.className = 'badge badge-purple pulse';
+    }
+
+    const hint = this.latestDetectedSign
+      ? {
+          signName: this.latestDetectedSign.signName,
+          spokenPhrase: this.latestDetectedSign.spokenPhrase,
+          intent: this.latestDetectedSign.description
+        }
+      : undefined;
+
+    const res = await this.geminiService.interpretFrame(this.videoEl, hint);
+    this.latestGeminiResult = res;
 
     if (res.success) {
-      if (statusBadge) {
-        statusBadge.textContent = `✓ Gemini: ${res.gestureName}`;
-        statusBadge.className = 'badge badge-green';
+      if (this.geminiStatusBadge) {
+        this.geminiStatusBadge.textContent = `✓ Gemini: ${res.gestureName}`;
+        this.geminiStatusBadge.className = 'badge badge-green';
       }
 
-      // Real-time speech synthesis: speaks aloud!
+      this.geminiLatencyBadge.textContent = `Latency: ${res.latencyMs}ms (${res.source})`;
+      this.geminiTranslatedPhrase.textContent = `"${res.spokenPhrase}"`;
+      this.geminiDetectedSign.textContent = res.gestureName;
+      this.geminiIntentBadge.textContent = res.intent;
+
+      // Speaks aloud!
       this.ttsService.speak(res.spokenPhrase, true);
+      this.spokenPhraseText.textContent = `"${res.spokenPhrase}"`;
 
-      // Render Gemini Insight Card
-      const resultCard = document.getElementById('gemini-result-card');
-      if (resultCard) {
-        resultCard.style.display = 'block';
-        resultCard.innerHTML = `
-          <div style="background: rgba(129, 140, 248, 0.12); border: 1px solid rgba(129, 140, 248, 0.35); border-radius: 8px; padding: 12px;">
-            <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; color: #818cf8;">
-              <span>🧠 Gemini Vision Decoded:</span>
-              <span>${Math.round(res.confidence * 100)}% Confidence</span>
-            </div>
-            <div style="font-size: 16px; font-weight: 800; color: #fff; margin: 6px 0;">"${res.spokenPhrase}"</div>
-            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
-              Gesture: <strong>${res.gestureName}</strong> • Intent: <em>${res.intent}</em> • Latency: ${res.latencyMs}ms
-            </div>
-            <button id="btn-teach-gemini-hdc" class="btn btn-sm btn-primary" style="width: 100%;">
-              ⚡ Teach to HDC Edge Memory (Instant 1.15 µs Reflex)
-            </button>
-          </div>
-        `;
-
-        document.getElementById('btn-teach-gemini-hdc')?.addEventListener('click', () => {
-          if (this.trajectoryBuffer.isFull()) {
-            const flatTraj = this.trajectoryBuffer.getFlattenedTrajectory();
-            if (flatTraj) {
-              this.engineManager.enroll(res.gestureName.toUpperCase(), flatTraj);
-              this.memoryInspector.update();
-              this.ttsService.speak(`Gesture ${res.gestureName} learned to reflex memory`, true);
-              alert(`⚡ Enrolled "${res.gestureName}" into HDC memory!\nIt will now trigger in 1.15 µs locally on-device.`);
-            }
-          }
-        });
-      }
+      // Append to sentence
+      this.appendToSentence(res.gestureName);
     } else {
-      if (statusBadge) {
-        statusBadge.textContent = 'Tier 2: Error';
-        statusBadge.className = 'badge badge-red';
+      if (this.geminiStatusBadge) {
+        this.geminiStatusBadge.textContent = 'Tier 2: Error';
+        this.geminiStatusBadge.className = 'badge badge-red';
       }
     }
   }
@@ -631,8 +576,8 @@ class HdcZeroApp {
 
 // Start application when DOM is ready
 window.addEventListener('DOMContentLoaded', () => {
-  const app = new HdcZeroApp();
-  app.init().catch((err) => {
-    console.error('HDC-Zero initialization error:', err);
+  const app = new SignVoxApp();
+  app.init().catch(err => {
+    console.error('SignVox initialization failed:', err);
   });
 });

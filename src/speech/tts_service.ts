@@ -1,9 +1,10 @@
 /**
- * GeminiGesture: Web Speech API Real-Time Speech Synthesis Service
+ * Web Speech API Real-Time Speech Synthesis Service
  * 
  * Provides an audible voice for non-verbal individuals:
  * - Natural cadence & volume
  * - Intelligent anti-repetition cooldown (prevents stutter if gesture held)
+ * - Animated audio wave callbacks (onStart / onEnd)
  * - Subtitle broadcast callback
  */
 
@@ -13,9 +14,10 @@ export class TtsService {
   private preferredVoice: SpeechSynthesisVoice | null = null;
   private lastSpokenText: string = '';
   private lastSpokenTime: number = 0;
-  private cooldownMs: number = 2500;
+  private cooldownMs: number = 2200;
   private isEnabled: boolean = true;
   private subtitleCallback: ((text: string) => void) | null = null;
+  private onSpeakingStateChange: ((isSpeaking: boolean) => void) | null = null;
 
   constructor() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -31,7 +33,7 @@ export class TtsService {
     if (!this.synth) return;
     this.voices = this.synth.getVoices();
     this.preferredVoice = this.voices.find(v => 
-      v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Daniel'))
+      v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Daniel') || v.name.includes('Alex'))
     ) || this.voices.find(v => v.lang.startsWith('en')) || this.voices[0] || null;
   }
 
@@ -39,10 +41,15 @@ export class TtsService {
     this.subtitleCallback = cb;
   }
 
+  public setSpeakingStateCallback(cb: (isSpeaking: boolean) => void): void {
+    this.onSpeakingStateChange = cb;
+  }
+
   public setEnabled(enabled: boolean): void {
     this.isEnabled = enabled;
     if (!enabled && this.synth) {
       this.synth.cancel();
+      if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
     }
   }
 
@@ -82,12 +89,25 @@ export class TtsService {
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
 
+    utterance.onstart = () => {
+      if (this.onSpeakingStateChange) this.onSpeakingStateChange(true);
+    };
+
+    utterance.onend = () => {
+      if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
+    };
+
+    utterance.onerror = () => {
+      if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
+    };
+
     this.synth.speak(utterance);
   }
 
   public stop(): void {
     if (this.synth) {
       this.synth.cancel();
+      if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
     }
   }
 }
