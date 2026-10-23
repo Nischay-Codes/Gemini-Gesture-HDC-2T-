@@ -141,6 +141,10 @@ export class TtsService {
     return this.isEnabled;
   }
 
+  public isSpeaking(): boolean {
+    return Boolean(this.synth && this.synth.speaking);
+  }
+
   public speak(text: string, force = false): void {
     if (!this.isEnabled || !text || text.trim() === '') return;
     const clean = text.trim();

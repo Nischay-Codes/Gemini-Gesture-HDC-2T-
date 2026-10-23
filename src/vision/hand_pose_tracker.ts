@@ -27,9 +27,9 @@ export class HandPoseTracker {
   private holdStartTime: number = 0;
   private isHolding: boolean = false;
   private lastTriggerTime: number = 0;
-  private readonly STABILITY_VELOCITY_THRESHOLD = 0.022; // Normalized units / frame
-  private readonly MIN_HOLD_DURATION_MS = 380; // Stable hold duration before triggering AI
-  private readonly COOLDOWN_MS = 1800; // Minimum time between auto-triggers
+  private readonly STABILITY_VELOCITY_THRESHOLD = 0.038; // Normalized units / frame (forgiving of micro-tremor)
+  private readonly MIN_HOLD_DURATION_MS = 160; // Fast pose lock in 160ms for instant real-time interaction
+  private readonly COOLDOWN_MS = 1200; // Fast repeat turnaround
 
   /**
    * Evaluates current hand pose and returns kinematic telemetry & trigger decision

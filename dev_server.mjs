@@ -121,7 +121,7 @@ const server = http.createServer((req, res) => {
         }
 
         const t0 = Date.now();
-        const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+        const candidateModels = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
         let successResult = null;
         let lastErr = null;
 
@@ -196,7 +196,7 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        const candidateModels = [parsed.model || 'gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+        const candidateModels = [parsed.model || 'gemini-3.5-flash', 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
         let successData = null;
         let lastStatus = 500;
         let lastErr = null;

@@ -30,7 +30,7 @@ export function sanitizeApiKey(raw: string): string {
 
 export class GeminiService {
   private apiKey: string = '';
-  private activeModel: string = 'gemini-3.1-flash-lite';
+  private activeModel: string = 'gemini-3.5-flash';
   private isProcessing: boolean = false;
   private lastInterpretation: GeminiInterpretation | null = null;
   private onStatusChange: ((status: string, isBusy: boolean) => void) | null = null;
@@ -158,7 +158,7 @@ export class GeminiService {
     }
 
     // 2. Direct browser fetch fallback
-    const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+    const candidateModels = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
     let lastErrMsg = '';
 
     for (const modelToUse of candidateModels) {
@@ -198,19 +198,14 @@ export class GeminiService {
   }
 
   /**
-   * Captures a base64 JPEG frame from a video or canvas element
+   * Captures an ultra-lean base64 JPEG frame (240x180 @ 0.45 quality, ~4KB) for rapid upload
    */
-  public captureFrameBase64(source: HTMLVideoElement | HTMLCanvasElement, quality = 0.85): string {
-    let canvas: HTMLCanvasElement;
-    if (source instanceof HTMLCanvasElement) {
-      canvas = source;
-    } else {
-      canvas = document.createElement('canvas');
-      canvas.width = source.videoWidth || 640;
-      canvas.height = source.videoHeight || 480;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-    }
+  public captureFrameBase64(source: HTMLVideoElement | HTMLCanvasElement, quality = 0.45): string {
+    const canvas = document.createElement('canvas');
+    canvas.width = 240;
+    canvas.height = 180;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL('image/jpeg', quality);
     return dataUrl.split(',')[1];
   }
@@ -257,21 +252,13 @@ export class GeminiService {
     try {
       const base64Data = this.captureFrameBase64(source);
 
-      const prompt = `You are the assistive communication voice for a non-verbal person who is communicating using hand gestures and sign language in front of this camera.
-Active hands visible: ${handContext?.handCount || 1} (${handContext?.handedness || 'in view'}).
-
-Your instructions:
-1. Examine the user's hand shape, finger extensions, palm orientations, and relative positions of BOTH hands (if 2 hands are used).
-2. Recognize what sign language (ASL, ISL, BSL), universal non-verbal gesture, or expressive physical action they are showing.
-3. Understand what the person is actively communicating.
-4. Formulate the EXACT first-person natural, concise, polite spoken sentence (under 12 words) to be voiced aloud on their speaker (e.g. "I need a glass of water please", "Thank you very much", "Where is the bathroom?", "I am happy to meet you", "Please help me with this", "Yes, I agree", "I love you", "Stop please").
-
-Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no comments):
+      const prompt = `You are the assistive voice for a non-verbal person signing. Hands visible: ${handContext?.handCount || 1}.
+Examine hands and formulate a concise first-person spoken sentence under 7 words.
+Return ONLY clean JSON:
 {
-  "gesture_name": "Short descriptive gesture name (e.g. Asking for Water, ASL Help, Namaste, Thank You, Pointing to Exit, Heart, Fist)",
-  "spoken_phrase": "First-person natural sentence to be spoken out loud (e.g. 'I need some water please.')",
-  "intent": "Communicative intent (e.g. Basic Need, Greeting, Assistance, Gratitude, Emotion, Directive)",
-  "confidence": 0.95
+  "gesture_name": "Short gesture name (e.g. ASL Letter F, Namaste, Water, Peace)",
+  "spoken_phrase": "Short first-person spoken sentence",
+  "intent": "Intent"
 }`;
 
       const requestBody = {
@@ -289,14 +276,17 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no comm
           }
         ],
         generationConfig: {
-          temperature: 0.15,
-          maxOutputTokens: 200,
-          responseMimeType: 'application/json'
+          temperature: 0.1,
+          maxOutputTokens: 35,
+          responseMimeType: 'application/json',
+          thinkingConfig: {
+            thinkingBudget: 0
+          }
         }
       };
 
       let rawText = '';
-      let modelUsed = this.activeModel || 'gemini-3.1-flash-lite';
+      let modelUsed = this.activeModel || 'gemini-3.5-flash';
 
       // 1. Try server proxy (immune to COEP / CORS)
       try {
@@ -321,7 +311,7 @@ Respond ONLY with a valid, clean JSON object (no markdown, no backticks, no comm
 
       // 2. Direct browser fetch fallback if proxy did not return
       if (!rawText) {
-        const candidateModels = [modelUsed, 'gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+        const candidateModels = [modelUsed, 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
         let lastErr = '';
 
         for (const m of candidateModels) {
